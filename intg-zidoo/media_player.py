@@ -62,7 +62,7 @@ class ZidooMediaPlayer(MediaPlayer):
             Features.CONTEXT_MENU,
             Features.INFO,
             Features.AUDIO_TRACK,
-            Features.SUBTITLE
+            Features.SUBTITLE,
         ]
         attributes = {
             Attributes.STATE: States.UNAVAILABLE,
@@ -215,7 +215,7 @@ class ZidooMediaPlayer(MediaPlayer):
             Attributes.MEDIA_DURATION,
             Attributes.MEDIA_TYPE,
             Attributes.MEDIA_ALBUM,
-            Attributes.MEDIA_ARTIST
+            Attributes.MEDIA_ARTIST,
         ]:
             if attr in update:
                 attributes = self._key_update_helper(attr, update[attr], attributes)

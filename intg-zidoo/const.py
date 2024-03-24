@@ -1,4 +1,5 @@
 """Constants for Zidoo component."""
+
 import logging
 
 from ucapi.media_player import MediaType

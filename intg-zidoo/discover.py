@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 import httpx
+
 # import netifaces
 from defusedxml import DefusedXmlException
 from defusedxml.ElementTree import ParseError, fromstring
@@ -69,6 +70,7 @@ def ssdp_request(ssdp_st: str, ssdp_mx: float = SSDP_MX) -> bytes:
 def get_local_ips() -> List[str]:
     """Get IPs of local network adapters."""
     return [i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None)]
+
 
 async def async_identify_devices() -> List[Dict]:
     """

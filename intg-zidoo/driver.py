@@ -237,7 +237,7 @@ async def on_avr_update(device_id: str, update: dict[str, Any] | None) -> None:
             MediaAttr.MEDIA_DURATION: device.media_duration,
             MediaAttr.MEDIA_TYPE: device.media_type,
             MediaAttr.MEDIA_ALBUM: device.media_album_name,
-            MediaAttr.MEDIA_ARTIST: device.media_artist
+            MediaAttr.MEDIA_ARTIST: device.media_artist,
         }
     else:
         _LOG.info("[%s] ZidooTV update: %s", device_id, update)
