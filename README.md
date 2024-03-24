@@ -1,6 +1,6 @@
 # Zidoo integration for Remote Two
 
-Using [python-songpal](https://github.com/rytilahti/python-songpal)
+Using code from [Zidoo Home Assistant component](https://github.com/wizmo2/zidoo-player)
 and [uc-integration-api](https://github.com/aitatoi/integration-python-library)
 
 The driver discovers Zidoo on the network. A media player entity is exposed to the core.
@@ -8,10 +8,11 @@ The driver discovers Zidoo on the network. A media player entity is exposed to t
 Supported attributes:
 
 - State (on, off, playing, paused, unknown)
+- Media image (artwork)
+- Media position/duration
 - Title
 - Album
 - Artist
-- Artwork
 - Source
 
 Supported commands:
@@ -24,6 +25,14 @@ Supported commands:
 - Volume down
 - Play/pause
 - Source select
+- Direction pad + Enter
+- Home menu, Context menu
+- Channel Up / Down
+- Info OSD
+- Audio track
+- Subtitles track
+
+Multiple instances are supported
 
 ## Usage
 
@@ -83,7 +92,7 @@ docker run --rm --name builder \
     docker.io/unfoldedcircle/r2-pyinstaller:3.11.6  \
     bash -c \
       "python -m pip install -r requirements.txt && \
-      pyinstaller --clean --onefile --name intg-sonyavr intg-sonyavr/driver.py"
+      pyinstaller --clean --onefile --name intg-zidoo intg-zidoo/driver.py"
 ```
 
 ### aarch64 Linux / Mac
@@ -97,7 +106,7 @@ docker run --rm --name builder \
     docker.io/unfoldedcircle/r2-pyinstaller:3.11.6  \
     bash -c \
       "python -m pip install -r requirements.txt && \
-      pyinstaller --clean --onefile --name intg-sonyavr intg-sonyavr/driver.py"
+      pyinstaller --clean --onefile --name intg-zidoo intg-zidoo/driver.py"
 ```
 
 ## Versioning
