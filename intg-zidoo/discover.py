@@ -107,14 +107,14 @@ async def async_send_ssdp_broadcast() -> Set[str]:
     Returns a set of SCPD XML resource urls for all discovered devices.
     """
     # Send up to three different broadcast messages
-    ips = get_local_ips()
+    # ips = get_local_ips()
     # Prepare output of responding devices
     urls = set()
 
     tasks = []
-    for ip_addr in ips:
-        tasks.append(async_send_ssdp_broadcast_ip(ip_addr))
-
+    # for ip_addr in ips:
+    #     tasks.append(async_send_ssdp_broadcast_ip(ip_addr))
+    tasks.append(async_send_ssdp_broadcast_ip(""))
     results = await asyncio.gather(*tasks)
 
     for result in results:
@@ -123,7 +123,6 @@ async def async_send_ssdp_broadcast() -> Set[str]:
 
     _LOGGER.debug("Following devices found: %s", urls)
     return urls
-
 
 async def async_send_ssdp_broadcast_ip(ip_addr: str) -> Set[str]:
     """Send SSDP broadcast messages to a single IP."""
