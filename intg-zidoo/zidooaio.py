@@ -501,6 +501,7 @@ class ZidooRC(object):
         # response = await self._req_json(url, log_errors=False)
 
         response = await self.get_system_info(log_errors=False)
+        self.events.emit(Events.CONNECTED, self.id)
 
         if response and response.get("status") == 200:
             _LOGGER.debug("connected: %s", response)
@@ -509,7 +510,6 @@ class ZidooRC(object):
             self._power_status = True
 
             await self._init_network()
-            self.events.emit(Events.CONNECTED, self.id)
             return response
 
     async def disconnect(self) -> None:
