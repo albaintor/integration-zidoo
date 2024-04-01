@@ -246,8 +246,12 @@ class ZidooRC(object):
                 authorization password key.  If not assigned, standard basic auth is used.
         """
         self._device_config = device_config
+        self._wifi_mac = None
+        self._ethernet_mac = None
         if device_config:
             self.id = device_config.id
+            self._ethernet_mac = device_config.net_mac_address
+            self._wifi_mac = device_config.wifi_mac_address
         else:
             self.id = host
         self.event_loop = loop or asyncio.get_running_loop()
@@ -255,7 +259,6 @@ class ZidooRC(object):
         self._source_list = None
         self._media_type: MediaType | None = None
         self._host = "{}:{}".format(host, CONF_PORT)
-        self._mac = mac
         self._psk = psk
         self._session = None
         self._cookies = None
@@ -501,12 +504,9 @@ class ZidooRC(object):
         # response = await self._req_json(url, log_errors=False)
 
         response = await self.get_system_info(log_errors=False)
-        self.events.emit(Events.CONNECTED, self.id)
 
         if response and response.get("status") == 200:
             _LOGGER.debug("connected: %s", response)
-            if self._mac is None:
-                self._mac = response.get("net_mac")
             self._power_status = True
 
             await self._init_network()
@@ -528,23 +528,31 @@ class ZidooRC(object):
         """
         return self._cookies is not None
 
+    def _create_magic_packet(self, mac_address: str) -> bytes:
+        addr_byte = self._mac.split(":")
+        hw_addr = struct.pack(
+            "BBBBBB",
+            int(addr_byte[0], 16),
+            int(addr_byte[1], 16),
+            int(addr_byte[2], 16),
+            int(addr_byte[3], 16),
+            int(addr_byte[4], 16),
+            int(addr_byte[5], 16),
+        )
+        return b"\xff" * 6 + hw_addr * 16
+
     def _wakeonlan(self) -> None:
         """Send WOL command. to known mac addresses."""
-        if self._mac is not None:
-            addr_byte = self._mac.split(":")
-            hw_addr = struct.pack(
-                "BBBBBB",
-                int(addr_byte[0], 16),
-                int(addr_byte[1], 16),
-                int(addr_byte[2], 16),
-                int(addr_byte[3], 16),
-                int(addr_byte[4], 16),
-                int(addr_byte[5], 16),
-            )
-            msg = b"\xff" * 6 + hw_addr * 16
+        messages = []
+        if self._ethernet_mac is not None:
+            messages.append(self._create_magic_packet(self._ethernet_mac))
+        if self._wifi_mac is not None:
+            messages.append(self._create_magic_packet(self._wifi_mac))
+        if len(messages) > 0:
             socket_instance = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             socket_instance.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            socket_instance.sendto(msg, ("<broadcast>", 9))
+            for msg in messages:
+                socket_instance.sendto(msg, ("<broadcast>", 9))
             socket_instance.close()
 
     async def _send_key(self, key: str, log_errors: bool = False) -> bool:

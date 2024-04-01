@@ -111,7 +111,8 @@ class ZidooMediaPlayer(MediaPlayer):
         elif cmd_id == Commands.MUTE_TOGGLE:
             res = await self._device.mute_volume()
         elif cmd_id == Commands.ON:
-            res = await self._device.turn_on()
+            await self._device.turn_on()
+            return StatusCodes.OK
         elif cmd_id == Commands.OFF:
             res = await self._device.turn_off()
         elif cmd_id == Commands.TOGGLE:

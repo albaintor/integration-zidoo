@@ -57,6 +57,7 @@ async def on_r2_connect_cmd() -> None:
         # start background task
         await device.connect()
         await device.async_update_data()
+        await api.set_device_state(ucapi.DeviceStates.CONNECTED)
 
 
 @api.listens_to(ucapi.Events.DISCONNECT)
@@ -145,7 +146,7 @@ async def on_unsubscribe_entities(entity_ids: list[str]) -> None:
 
 
 async def on_device_connected(device_id: str):
-    """Handle AVR connection."""
+    """Handle Zidoo connection."""
     _LOG.debug("Device connected: %s", device_id)
 
     if device_id not in _configured_devices:
@@ -283,7 +284,6 @@ def _configure_new_device(device_config: config.DeviceInstance, connect: bool = 
         device = _configured_devices[device_config.id]
     else:
         device = ZidooRC(device_config.address, device_config=device_config)
-
         device.events.on(zidooaio.Events.CONNECTED, on_device_connected)
         device.events.on(zidooaio.Events.ERROR, on_avr_connection_error)
         device.events.on(zidooaio.Events.UPDATE, on_avr_update)

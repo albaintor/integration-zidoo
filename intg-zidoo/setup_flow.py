@@ -305,12 +305,14 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     host = msg.input_values["choice"]
     _LOG.debug("Chosen Zidoo: %s. Trying to connect and retrieve device information...", host)
     try:
-        # simple connection check
+        # connection check and mac_address extraction for wakeonlan
         device = ZidooRC(host, None)
         data = await device.connect()
+        net_mac_address = data.get("net_mac")
+        wifi_mac_address = data.get("wif_mac")
         await device.disconnect()
         friendly_name = data["model"]
-        identifier = host
+        identifier = net_mac_address if net_mac_address else wifi_mac_address
     except Exception as ex:
         _LOG.error("Cannot connect to %s: %s", host, ex)
         return SetupError(error_type=IntegrationSetupError.CONNECTION_REFUSED)
@@ -325,7 +327,8 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
         return SetupError(error_type=IntegrationSetupError.OTHER)
 
     config.devices.add(
-        DeviceInstance(id=unique_id, name=friendly_name, address=host)
+        DeviceInstance(id=unique_id, name=friendly_name, address=host,
+                       net_mac_address=net_mac_address, wifi_mac_address=wifi_mac_address)
     )  # triggers ZidooAVR instance creation
     config.devices.store()
 
