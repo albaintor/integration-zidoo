@@ -529,7 +529,7 @@ class ZidooRC(object):
         return self._cookies is not None
 
     def _create_magic_packet(self, mac_address: str) -> bytes:
-        addr_byte = self._mac.split(":")
+        addr_byte = mac_address.split(":")
         hw_addr = struct.pack(
             "BBBBBB",
             int(addr_byte[0], 16),
