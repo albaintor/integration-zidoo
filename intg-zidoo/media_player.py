@@ -118,8 +118,7 @@ class ZidooMediaPlayer(MediaPlayer):
         elif cmd_id == Commands.TOGGLE:
             res = await self._device.async_power_toggle()
         elif cmd_id == Commands.SELECT_SOURCE:
-            return StatusCodes.NOT_IMPLEMENTED
-            # res = await self._device.set_channel_by_name(params.get("source"))
+            res = await self._device.start_app(params.get("source"))
         elif cmd_id == Commands.NEXT:
             res = await self._device.media_next_track()
         elif cmd_id == Commands.PREVIOUS:
