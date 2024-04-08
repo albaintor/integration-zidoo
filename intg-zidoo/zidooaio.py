@@ -11,7 +11,7 @@ import logging
 import json
 import socket
 import struct
-from asyncio import AbstractEventLoop
+from asyncio import AbstractEventLoop, Lock
 from enum import IntEnum, StrEnum
 from ucapi.media_player import Attributes as MediaAttr
 from aiohttp import ClientError, ClientSession, CookieJar
@@ -279,6 +279,7 @@ class ZidooRC(object):
         self._last_state = States.OFF
         self._media_info = {}
         self._update_interval = SCAN_INTERVAL
+        self._connect_lock = Lock()
 
     @property
     def state(self) -> States:
@@ -499,18 +500,31 @@ class ZidooRC(object):
             json
                 raw api response if successful.
         """
+        # Don't do 2 connections at the same time, just wait the attempt to finish
+        if self._connect_lock.locked():
+            _LOGGER.debug("connect already in process...")
+            await self._connect_lock.acquire()
+            response = await self.get_system_info(log_errors=False)
+            self._connect_lock.release()
+            return response
+
+        await self._connect_lock.acquire()
         # /connect?uuid= requires authorization for each client
         # url = "ZidooControlCenter/connect?name={}&uuid={}&tag=0".format(client_name, client_uuid)
         # response = await self._req_json(url, log_errors=False)
 
-        response = await self.get_system_info(log_errors=False)
+        try:
+            response = await self.get_system_info(log_errors=False)
 
-        if response and response.get("status") == 200:
-            _LOGGER.debug("connected: %s", response)
-            self._power_status = True
-
-            await self._init_network()
-            return response
+            if response and response.get("status") == 200:
+                _LOGGER.debug("connected: %s", response)
+                self._power_status = True
+                await self._init_network()
+                return response
+        except Exception as ex:
+            _LOGGER.error("Error during connection %s", ex)
+        finally:
+            self._connect_lock.release()
 
     async def disconnect(self) -> None:
         """Async Close connection."""

@@ -7,9 +7,13 @@ This module implements a Remote Two integration driver for Zidoo STB.
 """
 
 import asyncio
+import json
 import logging
 import os
 from typing import Any
+
+import websockets
+from ucapi.api import filter_log_msg_data, IntegrationAPI
 
 import config
 import media_player
@@ -21,6 +25,7 @@ from config import device_from_entity_id
 from ucapi.media_player import Attributes as MediaAttr, States
 
 from zidooaio import ZidooRC
+import ucapi.api_definitions as uc
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
 _LOOP = asyncio.get_event_loop()
@@ -284,7 +289,7 @@ def _configure_new_device(device_config: config.DeviceInstance, connect: bool = 
         device = _configured_devices[device_config.id]
     else:
         device = ZidooRC(device_config.address, device_config=device_config)
-        device.events.on(zidooaio.Events.CONNECTED, on_device_connected)
+        # device.events.on(zidooaio.Events.CONNECTED, on_device_connected)
         device.events.on(zidooaio.Events.ERROR, on_avr_connection_error)
         device.events.on(zidooaio.Events.UPDATE, on_avr_update)
         # receiver.events.on(avr.Events.IP_ADDRESS_CHANGED, handle_avr_address_change)
@@ -343,6 +348,34 @@ async def _async_remove(device: ZidooRC) -> None:
     device.events.remove_all_listeners()
 
 
+async def patched_broadcast_ws_event(
+        self, msg: str, msg_data: dict[str, Any], category: uc.EventCategory
+) -> None:
+    """
+    Send the given event-message to all connected WebSocket clients.
+
+    If a client is no longer connected, a log message is printed and the remaining
+    clients are notified.
+
+    :param msg: event message name
+    :param msg_data: message data payload
+    :param category: event category
+    """
+    data = {"kind": "event", "msg": msg, "msg_data": msg_data, "cat": category}
+    data_dump = json.dumps(data)
+    # filter fields
+    if _LOG.isEnabledFor(logging.DEBUG):
+        data_log = json.dumps(data) if filter_log_msg_data(data) else data_dump
+
+    for websocket in self._clients.copy():
+        if _LOG.isEnabledFor(logging.DEBUG):
+            _LOG.debug("[%s] ->: %s", websocket.remote_address, data_log)
+        try:
+            await websocket.send(data_dump)
+        except websockets.exceptions.WebSocketException:
+            pass
+
+
 async def main():
     """Start the Remote Two integration driver."""
     logging.basicConfig()
@@ -367,7 +400,8 @@ async def main():
         _LOOP.create_task(device.async_update_data())
 
     _LOOP.create_task(device_status_poller())
-
+    # Patched method
+    IntegrationAPI._broadcast_ws_event = patched_broadcast_ws_event
     await api.init("driver.json", setup_flow.driver_setup_handler)
 
 

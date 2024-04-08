@@ -11,7 +11,7 @@ from typing import Any
 import zidooaio
 from config import DeviceInstance, create_entity_id
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
-from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, States, MediaType
+from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, States, MediaType, Options
 
 from zidooaio import ZidooRC, ZKEYS
 
@@ -26,6 +26,22 @@ MEDIA_PLAYER_STATE_MAPPING = {
     zidooaio.States.UNAVAILABLE: States.UNAVAILABLE,
     zidooaio.States.UNKNOWN: States.UNKNOWN,
 }
+
+SIMPLE_COMMANDS = [
+    ZKEYS.ZKEY_POWER_STANDBY,
+    ZKEYS.ZKEY_POWER_REBOOT,
+    ZKEYS.ZKEY_CANCEL,
+    ZKEYS.ZKEY_MEDIA_STOP,
+    ZKEYS.ZKEY_APP_MOVIE,
+    ZKEYS.ZKEY_APP_FILE,
+    ZKEYS.ZKEY_APP_MUSIC,
+    ZKEYS.ZKEY_APP_PHOTO,
+    ZKEYS.ZKEY_RESOLUTION,
+    ZKEYS.ZKEY_REPEAT,
+    ZKEYS.ZKEY_PICTURE_IN_PICTURE,
+    ZKEYS.ZKEY_SELECT,
+    ZKEYS.ZKEY_LIGHT
+]
 
 
 class ZidooMediaPlayer(MediaPlayer):
@@ -42,6 +58,7 @@ class ZidooMediaPlayer(MediaPlayer):
             Features.VOLUME_UP_DOWN,
             Features.MUTE_TOGGLE,
             Features.SELECT_SOURCE,
+            Features.HOME,
             Features.MEDIA_TITLE,
             Features.MEDIA_IMAGE_URL,
             Features.MEDIA_TYPE,
@@ -86,6 +103,7 @@ class ZidooMediaPlayer(MediaPlayer):
             features,
             attributes,
             device_class=DeviceClasses.SET_TOP_BOX,
+            options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS}
         )
 
     async def command(self, cmd_id: str, params: dict[str, Any] | None = None) -> StatusCodes:
