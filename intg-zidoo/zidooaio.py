@@ -1702,7 +1702,9 @@ class ZidooRC(object):
         """Async Turn the media player on."""
         # Try using the power on command incase the WOL doesn't work
         self._wakeonlan()
-        return await self._send_key(ZKEYS.ZKEY_POWER_ON, False)
+        # ZKEYS.ZKEY_POWER_ON will actually turn off the device, not needed
+        # return await self._send_key(ZKEYS.ZKEY_POWER_ON, False)
+        return True
 
     async def turn_off(self, standby=False):
         """Async Turn off media player."""
