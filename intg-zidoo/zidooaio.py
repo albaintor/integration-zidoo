@@ -861,8 +861,10 @@ class ZidooRC:
                 return_value["date"] = result.get("date")
                 return_value["uri"] = result.get("uri")
                 return_value["bitrate"] = result.get("bitrate")
-                return_value["audio"] = (f"{result.get('extension')}: {result.get('channels')}"
-                                         f" channels {result.get('bits')} bits {result.get('SampleRate')} Hz")
+                return_value["audio"] = (
+                    f"{result.get('extension')}: {result.get('channels')}"
+                    f" channels {result.get('bits')} bits {result.get('SampleRate')} Hz"
+                )
                 self._music_id = result.get("id")
                 self._music_type = result.get("type")
 
@@ -1091,9 +1093,7 @@ class ZidooRC:
         if len(self._app_list) == 0:
             self._app_list = await self.get_app_list(log_errors)
         if app_name in self._app_list:
-            return await self._start_app(
-                self._app_list[app_name]
-            )
+            return await self._start_app(self._app_list[app_name])
         return False
 
     async def _start_app(self, app_id) -> bool:
@@ -1159,9 +1159,7 @@ class ZidooRC:
             json
                 raw API response if successful
         """
-        response = await self._req_json(
-            f"ZidooPoster/getCollection?id={movie_id}"
-        )
+        response = await self._req_json(f"ZidooPoster/getCollection?id={movie_id}")
 
         if response is not None and response.get("status") == 200:
             return response
@@ -1737,9 +1735,11 @@ class ZidooRC:
         Returns
             url for image
         """
-        url = (f"http://{self._host}/ZidooMusicControl/v2/getImage?id={music_id}"
-               f"&music_type={ZMUSIC_IMAGETYPE[music_type]}"
-               f"&type={music_type}&target={ZMUSIC_IMAGETARGET[music_type]}")
+        url = (
+            f"http://{self._host}/ZidooMusicControl/v2/getImage?id={music_id}"
+            f"&music_type={ZMUSIC_IMAGETYPE[music_type]}"
+            f"&type={music_type}&target={ZMUSIC_IMAGETARGET[music_type]}"
+        )
 
         return url
 
@@ -1762,8 +1762,10 @@ class ZidooRC:
             url = f"http://{self._host}/ZidooPoster/getFile/getBackdrop?id={self._video_id}&w={width}&h={height}"
 
         if self._current_source == ZCONTENT_MUSIC and self._music_id > 0:
-            url = (f"http://{self._host}/ZidooMusicControl/v2/getImage?"
-                   f"id={self._music_id}&music_type={self._music_type}&type=4&target=16")
+            url = (
+                f"http://{self._host}/ZidooMusicControl/v2/getImage?"
+                f"id={self._music_id}&music_type={self._music_type}&type=4&target=16"
+            )
 
         # _LOGGER.debug("zidoo getting current image: url-{}".format(url))
         return url

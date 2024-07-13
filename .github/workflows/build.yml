@@ -67,7 +67,6 @@ jobs:
         run: |
           cp dist/intg-zidoo artifacts/
           cp driver.json artifacts/
-          cp orange.png artifacts/
           echo "ARTIFACT_NAME=uc-intg-${{ env.INTG_NAME }}-${{ env.VERSION }}-aarch64" >> $GITHUB_ENV
           
       - name: Create upload artifact
