@@ -11,7 +11,6 @@ from enum import IntEnum
 
 import config
 import discover
-from zidooaio import ZidooRC
 from config import DeviceInstance
 from ucapi import (
     AbortDriverSetup,
@@ -24,8 +23,11 @@ from ucapi import (
     SetupError,
     UserDataResponse,
 )
+from zidooaio import ZidooRC
 
 _LOG = logging.getLogger(__name__)
+
+# pylint: disable = W1405
 
 
 class SetupSteps(IntEnum):
@@ -82,7 +84,10 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
         return await handle_driver_setup(msg)
     if isinstance(msg, UserDataResponse):
         _LOG.debug(msg)
-        if _setup_step == SetupSteps.CONFIGURATION_MODE and "action" in msg.input_values:
+        if (
+            _setup_step == SetupSteps.CONFIGURATION_MODE
+            and "action" in msg.input_values
+        ):
             return await handle_configuration_mode(msg)
         if _setup_step == SetupSteps.DISCOVER and "address" in msg.input_values:
             return await _handle_discovery(msg)
@@ -100,7 +105,9 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
     return SetupError()
 
 
-async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | SetupError:
+async def handle_driver_setup(
+    _msg: DriverSetupRequest,
+) -> RequestUserInput | SetupError:
     """
     Start driver setup.
 
@@ -120,7 +127,9 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
         # get all configured devices for the user to choose from
         dropdown_devices = []
         for device in config.devices.all():
-            dropdown_devices.append({"id": device.id, "label": {"en": f"{device.name} ({device.id})"}})
+            dropdown_devices.append(
+                {"id": device.id, "label": {"en": f"{device.name} ({device.id})"}}
+            )
 
         # TODO #12 externalize language texts
         # build user actions, based on available devices
@@ -165,7 +174,12 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
             {"en": "Configuration mode", "de": "Konfigurations-Modus"},
             [
                 {
-                    "field": {"dropdown": {"value": dropdown_devices[0]["id"], "items": dropdown_devices}},
+                    "field": {
+                        "dropdown": {
+                            "value": dropdown_devices[0]["id"],
+                            "items": dropdown_devices,
+                        }
+                    },
                     "id": "choice",
                     "label": {
                         "en": "Configured devices",
@@ -174,7 +188,12 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
                     },
                 },
                 {
-                    "field": {"dropdown": {"value": dropdown_actions[0]["id"], "items": dropdown_actions}},
+                    "field": {
+                        "dropdown": {
+                            "value": dropdown_actions[0]["id"],
+                            "items": dropdown_actions,
+                        }
+                    },
                     "id": "action",
                     "label": {
                         "en": "Action",
@@ -191,7 +210,9 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
     return _user_input_discovery
 
 
-async def handle_configuration_mode(msg: UserDataResponse) -> RequestUserInput | SetupComplete | SetupError:
+async def handle_configuration_mode(
+    msg: UserDataResponse,
+) -> RequestUserInput | SetupComplete | SetupError:
     """
     Process user data response in a setup process.
 
@@ -246,6 +267,7 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
     dropdown_items = []
     address = msg.input_values["address"]
 
+    # pylint: disable = W0718
     if address:
         _LOG.debug("Starting manual driver setup for %s", address)
         try:
@@ -254,7 +276,9 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
             data = await device.connect()
             await device.disconnect()
             friendly_name = data["model"]
-            dropdown_items.append({"id": address, "label": {"en": f"{friendly_name} [{address}]"}})
+            dropdown_items.append(
+                {"id": address, "label": {"en": f"{friendly_name} [{address}]"}}
+            )
         except Exception as ex:
             _LOG.error("Cannot connect to manually entered address %s: %s", address, ex)
             return SetupError(error_type=IntegrationSetupError.CONNECTION_REFUSED)
@@ -281,7 +305,12 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
         },
         [
             {
-                "field": {"dropdown": {"value": dropdown_items[0]["id"], "items": dropdown_items}},
+                "field": {
+                    "dropdown": {
+                        "value": dropdown_items[0]["id"],
+                        "items": dropdown_items,
+                    }
+                },
                 "id": "choice",
                 "label": {
                     "en": "Choose your Zidoo",
@@ -302,8 +331,11 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     :param msg: response data from the requested user data
     :return: the setup action on how to continue: SetupComplete if a valid AVR device was chosen.
     """
+    # pylint: disable = W0718
     host = msg.input_values["choice"]
-    _LOG.debug("Chosen Zidoo: %s. Trying to connect and retrieve device information...", host)
+    _LOG.debug(
+        "Chosen Zidoo: %s. Trying to connect and retrieve device information...", host
+    )
     try:
         # connection check and mac_address extraction for wakeonlan
         device = ZidooRC(host, None)
@@ -323,12 +355,20 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     unique_id = identifier
 
     if unique_id is None:
-        _LOG.error("Could not get mac address of host %s: required to create a unique device", host)
+        _LOG.error(
+            "Could not get mac address of host %s: required to create a unique device",
+            host,
+        )
         return SetupError(error_type=IntegrationSetupError.OTHER)
 
     config.devices.add(
-        DeviceInstance(id=unique_id, name=friendly_name, address=host,
-                       net_mac_address=net_mac_address, wifi_mac_address=wifi_mac_address)
+        DeviceInstance(
+            id=unique_id,
+            name=friendly_name,
+            address=host,
+            net_mac_address=net_mac_address,
+            wifi_mac_address=wifi_mac_address,
+        )
     )  # triggers ZidooAVR instance creation
     config.devices.store()
 

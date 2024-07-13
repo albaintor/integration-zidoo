@@ -40,6 +40,7 @@ def device_from_entity_id(entity_id: str) -> str | None:
 class DeviceInstance:
     """Orange TV device configuration."""
 
+    # pylint: disable = W0622
     id: str
     name: str
     address: str
@@ -47,6 +48,7 @@ class DeviceInstance:
     wifi_mac_address: str
 
     def __init__(self, id, name, address, net_mac_address=None, wifi_mac_address=None):
+        """Initialize device instance config."""
         self.id = id
         self.name = name
         self.address = address

@@ -12,20 +12,18 @@ import logging
 import os
 from typing import Any
 
-import websockets
-from ucapi.api import filter_log_msg_data, IntegrationAPI
-
 import config
 import media_player
 import setup_flow
 import ucapi
-
+import ucapi.api_definitions as uc
+import websockets
 import zidooaio
 from config import device_from_entity_id
-from ucapi.media_player import Attributes as MediaAttr, States
-
+from ucapi.api import IntegrationAPI, filter_log_msg_data
+from ucapi.media_player import Attributes as MediaAttr
+from ucapi.media_player import States
 from zidooaio import ZidooRC
-import ucapi.api_definitions as uc
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
 _LOOP = asyncio.get_event_loop()
@@ -76,8 +74,8 @@ async def on_r2_disconnect_cmd():
 
 @api.listens_to(ucapi.Events.ENTER_STANDBY)
 async def on_r2_enter_standby() -> None:
-    """
-    Enter standby notification from Remote Two.
+    """Enter standby notification from Remote Two.
+
     Disconnect every ZidooTV instances.
     """
     global _R2_IN_STANDBY
@@ -121,14 +119,19 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
         if device_id in _configured_devices:
             device = _configured_devices[device_id]
             state = media_player.state_from_device(device.state)
-            api.configured_entities.update_attributes(entity_id, {ucapi.media_player.Attributes.STATE: state})
+            api.configured_entities.update_attributes(
+                entity_id, {ucapi.media_player.Attributes.STATE: state}
+            )
             continue
 
         device = config.devices.get(device_id)
         if device:
             _configure_new_device(device, connect=True)
         else:
-            _LOG.error("Failed to subscribe entity %s: no device configuration found", entity_id)
+            _LOG.error(
+                "Failed to subscribe entity %s: no device configuration found",
+                entity_id,
+            )
 
 
 @api.listens_to(ucapi.Events.UNSUBSCRIBE_ENTITIES)
@@ -173,7 +176,10 @@ async def on_device_connected(device_id: str):
             ):
                 # TODO why STANDBY?
                 api.configured_entities.update_attributes(
-                    entity_id, {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.STANDBY}
+                    entity_id,
+                    {
+                        ucapi.media_player.Attributes.STATE: ucapi.media_player.States.STANDBY
+                    },
                 )
 
 
@@ -188,7 +194,10 @@ async def on_device_disconnected(avr_id: str):
 
         if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             api.configured_entities.update_attributes(
-                entity_id, {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE}
+                entity_id,
+                {
+                    ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE
+                },
             )
 
     # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
@@ -206,7 +215,10 @@ async def on_avr_connection_error(avr_id: str, message):
 
         if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             api.configured_entities.update_attributes(
-                entity_id, {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE}
+                entity_id,
+                {
+                    ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE
+                },
             )
 
     # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
@@ -217,7 +229,12 @@ async def handle_avr_address_change(avr_id: str, address: str) -> None:
     """Update device configuration with changed IP address."""
     device = config.devices.get(avr_id)
     if device and device.address != address:
-        _LOG.info("Updating IP address of configured AVR %s: %s -> %s", avr_id, device.address, address)
+        _LOG.info(
+            "Updating IP address of configured AVR %s: %s -> %s",
+            avr_id,
+            device.address,
+            address,
+        )
         device.address = address
         config.devices.update(device)
 
@@ -275,7 +292,9 @@ def _entities_from_avr(avr_id: str) -> list[str]:
     return [f"media_player.{avr_id}"]
 
 
-def _configure_new_device(device_config: config.DeviceInstance, connect: bool = True) -> None:
+def _configure_new_device(
+    device_config: config.DeviceInstance, connect: bool = True
+) -> None:
     """
     Create and configure a new device.
 
@@ -302,7 +321,9 @@ def _configure_new_device(device_config: config.DeviceInstance, connect: bool = 
     _register_available_entities(device_config, device)
 
 
-def _register_available_entities(config_device: config.DeviceInstance, device: ZidooRC) -> None:
+def _register_available_entities(
+    config_device: config.DeviceInstance, device: ZidooRC
+) -> None:
     """
     Create entities for given receiver device and register them as available entities.
 
@@ -326,7 +347,9 @@ def on_device_added(device: config.DeviceInstance) -> None:
 def on_device_removed(device: config.DeviceInstance | None) -> None:
     """Handle a removed device in the configuration."""
     if device is None:
-        _LOG.debug("Configuration cleared, disconnecting & removing all configured AVR instances")
+        _LOG.debug(
+            "Configuration cleared, disconnecting & removing all configured AVR instances"
+        )
         for configured in _configured_devices.values():
             _LOOP.create_task(_async_remove(configured))
         _configured_devices.clear()
@@ -349,7 +372,7 @@ async def _async_remove(device: ZidooRC) -> None:
 
 
 async def patched_broadcast_ws_event(
-        self, msg: str, msg_data: dict[str, Any], category: uc.EventCategory
+    self, msg: str, msg_data: dict[str, Any], category: uc.EventCategory
 ) -> None:
     """
     Send the given event-message to all connected WebSocket clients.
@@ -367,6 +390,7 @@ async def patched_broadcast_ws_event(
     if _LOG.isEnabledFor(logging.DEBUG):
         data_log = json.dumps(data) if filter_log_msg_data(data) else data_dump
 
+    # pylint: disable = W0212
     for websocket in self._clients.copy():
         if _LOG.isEnabledFor(logging.DEBUG):
             _LOG.debug("[%s] ->: %s", websocket.remote_address, data_log)
@@ -388,19 +412,22 @@ async def main():
     logging.getLogger("receiver").setLevel(level)
     logging.getLogger("setup_flow").setLevel(level)
 
-    config.devices = config.Devices(api.config_dir_path, on_device_added, on_device_removed)
+    config.devices = config.Devices(
+        api.config_dir_path, on_device_added, on_device_removed
+    )
     for device in config.devices.all():
         _LOG.debug("UC Zidoo device %s %s", device.id, device.address)
         _configure_new_device(device, connect=False)
 
     # _LOOP.create_task(receiver_status_poller())
     for device in _configured_devices.values():
-        if device.state == States.OFF or device.state == States.UNKNOWN:
+        if device.state in [States.OFF, States.UNKNOWN]:
             continue
         _LOOP.create_task(device.async_update_data())
 
     _LOOP.create_task(device_status_poller())
     # Patched method
+    # pylint: disable = W0212
     IntegrationAPI._broadcast_ws_event = patched_broadcast_ws_event
     await api.init("driver.json", setup_flow.driver_setup_handler)
 

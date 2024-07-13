@@ -11,9 +11,16 @@ from typing import Any
 import zidooaio
 from config import DeviceInstance, create_entity_id
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
-from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, States, MediaType, Options
-
-from zidooaio import ZidooRC, ZKEYS
+from ucapi.media_player import (
+    Attributes,
+    Commands,
+    DeviceClasses,
+    Features,
+    MediaType,
+    Options,
+    States,
+)
+from zidooaio import ZKEYS, ZidooRC
 
 _LOG = logging.getLogger(__name__)
 
@@ -40,7 +47,7 @@ SIMPLE_COMMANDS = [
     ZKEYS.ZKEY_REPEAT,
     ZKEYS.ZKEY_PICTURE_IN_PICTURE,
     ZKEYS.ZKEY_SELECT,
-    ZKEYS.ZKEY_LIGHT
+    ZKEYS.ZKEY_LIGHT,
 ]
 
 
@@ -103,10 +110,12 @@ class ZidooMediaPlayer(MediaPlayer):
             features,
             attributes,
             device_class=DeviceClasses.SET_TOP_BOX,
-            options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS}
+            options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS},
         )
 
-    async def command(self, cmd_id: str, params: dict[str, Any] | None = None) -> StatusCodes:
+    async def command(
+        self, cmd_id: str, params: dict[str, Any] | None = None
+    ) -> StatusCodes:
         """
         Media-player entity command handler.
 
@@ -116,6 +125,7 @@ class ZidooMediaPlayer(MediaPlayer):
         :param params: optional command parameters
         :return: status code of the command request
         """
+        # pylint: disable = R0915
         _LOG.info("Got %s command request: %s %s", self.id, cmd_id, params)
 
         if self._device is None:
@@ -142,65 +152,65 @@ class ZidooMediaPlayer(MediaPlayer):
         elif cmd_id == Commands.PREVIOUS:
             res = await self._device.media_previous_track()
         elif cmd_id == Commands.CHANNEL_UP:
-            res = await self._device._send_key(ZKEYS.ZKEY_PAGE_UP)
+            res = await self._device.send_key(ZKEYS.ZKEY_PAGE_UP)
         elif cmd_id == Commands.CHANNEL_DOWN:
-            res = await self._device._send_key(ZKEYS.ZKEY_PAGE_DOWN)
+            res = await self._device.send_key(ZKEYS.ZKEY_PAGE_DOWN)
         elif cmd_id == Commands.PLAY_PAUSE:
             res = await self._device.media_play_pause()
         elif cmd_id == Commands.STOP:
             res = await self._device.media_stop()
         elif cmd_id == Commands.FAST_FORWARD:
-            res = await self._device._send_key(ZKEYS.ZKEY_MEDIA_FORWARDS)
+            res = await self._device.send_key(ZKEYS.ZKEY_MEDIA_FORWARDS)
         elif cmd_id == Commands.REWIND:
-            res = await self._device._send_key(ZKEYS.ZKEY_MEDIA_BACKWARDS)
+            res = await self._device.send_key(ZKEYS.ZKEY_MEDIA_BACKWARDS)
         elif cmd_id == Commands.RECORD:
-            res = await self._device._send_key(ZKEYS.ZKEY_RECORD)
+            res = await self._device.send_key(ZKEYS.ZKEY_RECORD)
         elif cmd_id == Commands.CURSOR_UP:
-            res = await self._device._send_key(ZKEYS.ZKEY_UP)
+            res = await self._device.send_key(ZKEYS.ZKEY_UP)
         elif cmd_id == Commands.CURSOR_DOWN:
-            res = await self._device._send_key(ZKEYS.ZKEY_DOWN)
+            res = await self._device.send_key(ZKEYS.ZKEY_DOWN)
         elif cmd_id == Commands.CURSOR_LEFT:
-            res = await self._device._send_key(ZKEYS.ZKEY_LEFT)
+            res = await self._device.send_key(ZKEYS.ZKEY_LEFT)
         elif cmd_id == Commands.CURSOR_RIGHT:
-            res = await self._device._send_key(ZKEYS.ZKEY_RIGHT)
+            res = await self._device.send_key(ZKEYS.ZKEY_RIGHT)
         elif cmd_id == Commands.CURSOR_ENTER:
-            res = await self._device._send_key(ZKEYS.ZKEY_OK)
+            res = await self._device.send_key(ZKEYS.ZKEY_OK)
         elif cmd_id == Commands.BACK:
-            res = await self._device._send_key(ZKEYS.ZKEY_BACK)
+            res = await self._device.send_key(ZKEYS.ZKEY_BACK)
         elif cmd_id == Commands.MENU:
-            res = await self._device._send_key(ZKEYS.ZKEY_MENU)
+            res = await self._device.send_key(ZKEYS.ZKEY_MENU)
         elif cmd_id == Commands.HOME:
-            res = await self._device._send_key(ZKEYS.ZKEY_HOME)
+            res = await self._device.send_key(ZKEYS.ZKEY_HOME)
         elif cmd_id == Commands.SETTINGS:
-            res = await self._device._send_key(ZKEYS.ZKEY_APP_SWITCH)
+            res = await self._device.send_key(ZKEYS.ZKEY_APP_SWITCH)
         elif cmd_id == Commands.CONTEXT_MENU:
-            res = await self._device._send_key(ZKEYS.ZKEY_POPUP_MENU)
+            res = await self._device.send_key(ZKEYS.ZKEY_POPUP_MENU)
         elif cmd_id == Commands.INFO:
-            res = await self._device._send_key(ZKEYS.ZKEY_INFO)
+            res = await self._device.send_key(ZKEYS.ZKEY_INFO)
         elif cmd_id == Commands.AUDIO_TRACK:
-            res = await self._device._send_key(ZKEYS.ZKEY_AUDIO)
+            res = await self._device.send_key(ZKEYS.ZKEY_AUDIO)
         elif cmd_id == Commands.SUBTITLE:
-            res = await self._device._send_key(ZKEYS.ZKEY_SUBTITLE)
+            res = await self._device.send_key(ZKEYS.ZKEY_SUBTITLE)
         elif cmd_id == Commands.DIGIT_0:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_0)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_0)
         elif cmd_id == Commands.DIGIT_1:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_1)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_1)
         elif cmd_id == Commands.DIGIT_2:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_2)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_2)
         elif cmd_id == Commands.DIGIT_3:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_3)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_3)
         elif cmd_id == Commands.DIGIT_4:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_4)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_4)
         elif cmd_id == Commands.DIGIT_5:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_5)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_5)
         elif cmd_id == Commands.DIGIT_6:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_6)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_6)
         elif cmd_id == Commands.DIGIT_7:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_7)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_7)
         elif cmd_id == Commands.DIGIT_8:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_8)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_8)
         elif cmd_id == Commands.DIGIT_9:
-            res = await self._device._send_key(ZKEYS.ZKEY_NUM_9)
+            res = await self._device.send_key(ZKEYS.ZKEY_NUM_9)
         else:
             return StatusCodes.NOT_IMPLEMENTED
 

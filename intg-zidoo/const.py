@@ -58,7 +58,15 @@ ZCONTENT_ITEM_TYPE = {
     1: MediaType.MUSIC,  # music
     2: MediaType.VIDEO,  # video
     # 3: MediaType.IMAGE,  # image
-    # 4: 'text', # 5: 'apk', # 6: 'pdf', # 7: 'document', # 8: 'spreadsheet', # 9: 'presentation', # 10: 'web', # 11: 'archive' ,  # 12: 'other'
+    # 4: 'text',
+    # 5: 'apk',
+    # 6: 'pdf',
+    # 7: 'document',
+    # 8: 'spreadsheet',
+    # 9: 'presentation',
+    # 10: 'web',
+    # 11: 'archive' ,
+    # 12: 'other'
     1000: MEDIA_TYPE_FILE,  # hhd
     1001: MEDIA_TYPE_FILE,  # usb
     1002: MEDIA_TYPE_FILE,  # usb

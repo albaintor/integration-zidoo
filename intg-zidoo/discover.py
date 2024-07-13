@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-This module implements a discovery function for Orange TV.
-
-"""
+"""This module implements a discovery function for Orange TV."""
 
 import asyncio
 import json
@@ -124,9 +121,9 @@ async def async_send_ssdp_broadcast() -> Set[str]:
     _LOGGER.debug("Following devices found: %s", urls)
     return urls
 
+
 async def async_send_ssdp_broadcast_ip(ip_addr: str) -> Set[str]:
     """Send SSDP broadcast messages to a single IP."""
-
     try:
         # Ignore 169.254.0.0/16 addresses
         if ip_addr.startswith("169.254."):
@@ -138,7 +135,9 @@ async def async_send_ssdp_broadcast_ip(ip_addr: str) -> Set[str]:
 
         # Get asyncio loop
         loop = asyncio.get_event_loop()
-        transport, protocol = await loop.create_datagram_endpoint(OrangeTVSSDP, sock=sock)
+        transport, protocol = await loop.create_datagram_endpoint(
+            OrangeTVSSDP, sock=sock
+        )
 
         # Wait for the timeout period
         await asyncio.sleep(SSDP_MX)
@@ -146,9 +145,12 @@ async def async_send_ssdp_broadcast_ip(ip_addr: str) -> Set[str]:
         # Close the connection
         transport.close()
 
-        _LOGGER.debug("Got %s results after SSDP queries using ip %s", len(protocol.urls), ip_addr)
+        _LOGGER.debug(
+            "Got %s results after SSDP queries using ip %s", len(protocol.urls), ip_addr
+        )
 
         return protocol.urls
+    # pylint: disable = W0718
     except Exception:
         return set()
 
@@ -177,15 +179,23 @@ def evaluate_scpd_xml(url: str, body: str) -> Optional[Dict]:
             device_xml = root.find(SCPD_DEVICE)
         elif root.find(SCPD_DEVICE).find(SCPD_DEVICELIST) is not None:
             for dev in root.find(SCPD_DEVICE).find(SCPD_DEVICELIST):
-                if dev.find(SCPD_DEVICETYPE).text in SUPPORTED_DEVICETYPES and dev.find(SCPD_SERIALNUMBER) is not None:
+                if (
+                    dev.find(SCPD_DEVICETYPE).text in SUPPORTED_DEVICETYPES
+                    and dev.find(SCPD_SERIALNUMBER) is not None
+                ):
                     device_xml = dev
                     break
 
         if device_xml is None:
             return None
 
-        if device_xml.find(SCPD_PRESENTATIONURL) is not None and device_xml.find(SCPD_PRESENTATIONURL).text != "/":
-            device["host"] = urlparse(device_xml.find(SCPD_PRESENTATIONURL).text).hostname
+        if (
+            device_xml.find(SCPD_PRESENTATIONURL) is not None
+            and device_xml.find(SCPD_PRESENTATIONURL).text != "/"
+        ):
+            device["host"] = urlparse(
+                device_xml.find(SCPD_PRESENTATIONURL).text
+            ).hostname
             device["presentationURL"] = device_xml.find(SCPD_PRESENTATIONURL).text
         else:
             device["host"] = urlparse(url).hostname
@@ -201,7 +211,9 @@ def evaluate_scpd_xml(url: str, body: str) -> Optional[Dict]:
         ParseError,
         UnicodeDecodeError,
     ) as err:
-        _LOGGER.error("Error occurred during evaluation of SCPD XML from URI %s: %s", url, err)
+        _LOGGER.error(
+            "Error occurred during evaluation of SCPD XML from URI %s: %s", url, err
+        )
         return None
 
 
