@@ -46,16 +46,7 @@ class DeviceInstance:
     address: str
     net_mac_address: str
     wifi_mac_address: str
-
-    def __init__(self, id, name, address, net_mac_address=None, wifi_mac_address=None):
-        """Initialize device instance config."""
-        self.id = id
-        self.name = name
-        self.address = address
-        if net_mac_address:
-            self.net_mac_address = net_mac_address
-        if wifi_mac_address:
-            self.wifi_mac_address = wifi_mac_address
+    always_on: bool
 
 
 class _EnhancedJSONEncoder(json.JSONEncoder):
@@ -123,6 +114,7 @@ class Devices:
                 item.name = device_instance.name
                 item.net_mac_address = device_instance.net_mac_address
                 item.wifi_mac_address = device_instance.wifi_mac_address
+                item.always_on = device_instance.always_on
                 return self.store()
         return False
 
@@ -175,10 +167,16 @@ class Devices:
             with open(self._cfg_file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for item in data:
-                try:
-                    self._config.append(DeviceInstance(**item))
-                except TypeError as ex:
-                    _LOG.warning("Invalid configuration entry will be ignored: %s", ex)
+                # not using AtvDevice(**item) to be able to migrate old configuration files with missing attributes
+                device_instance = DeviceInstance(
+                    item.get("id"),
+                    item.get("name"),
+                    item.get("address"),
+                    item.get("net_mac_address", ""),
+                    item.get("wifi_mac_address", ""),
+                    item.get("always_on", False),
+                )
+                self._config.append(device_instance)
             return True
         except OSError:
             _LOG.error("Cannot open the config file")

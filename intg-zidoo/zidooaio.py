@@ -13,10 +13,13 @@ import logging
 import socket
 import struct
 import urllib.parse
-from asyncio import AbstractEventLoop, Lock
+from asyncio import AbstractEventLoop, Lock, CancelledError
 from datetime import datetime, timedelta
 from enum import IntEnum, StrEnum
+from functools import wraps
+from typing import TypeVar, ParamSpec, Callable, Concatenate, Awaitable, Any, Coroutine
 
+import ucapi
 from aiohttp import ClientError, ClientSession, CookieJar
 from config import DeviceInstance
 from pyee import AsyncIOEventEmitter
@@ -26,6 +29,8 @@ from yarl import URL
 
 SCAN_INTERVAL = timedelta(seconds=10)
 SCAN_INTERVAL_RAPID = timedelta(seconds=1)
+CONNECTION_RETRIES = 10
+
 
 # pylint: disable = C0302
 
@@ -226,17 +231,40 @@ ZMUSIC_PLAYLISTTYPE = {
     ZMEDIA_TYPE_PLAYLIST: 5,
 }
 
+_ZidooDeviceT = TypeVar("_ZidooDeviceT", bound="ZidooRC")
+_P = ParamSpec("_P")
+
+
+def cmd_wrapper(
+        func: Callable[Concatenate[_ZidooDeviceT, _P], Awaitable[dict[str, Any] | None]],
+) -> Callable[Concatenate[_ZidooDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
+    """Catch command exceptions."""
+
+    @wraps(func)
+    async def wrapper(obj: _ZidooDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
+        """Wrap all command methods."""
+        res = await func(obj, *args, **kwargs)
+        await obj.start_polling()
+        if res and isinstance(res, dict):
+            result: dict[str, Any] | None = res.get("result", None)
+            if result and result.get("responseCode", None) == "0":
+                return ucapi.StatusCodes.OK
+            return ucapi.StatusCodes.BAD_REQUEST
+        return ucapi.StatusCodes.OK
+
+    return wrapper
+
 
 class ZidooRC:
     """Zidoo Media Player Remote Control."""
 
     def __init__(
-        self,
-        host: str,
-        device_config: DeviceInstance | None = None,
-        psk: str = None,
-        mac: str = None,
-        loop: AbstractEventLoop | None = None,
+            self,
+            host: str,
+            device_config: DeviceInstance | None = None,
+            psk: str = None,
+            mac: str = None,
+            loop: AbstractEventLoop | None = None,
     ) -> None:
         """Initialize the Zidoo class.
 
@@ -258,8 +286,8 @@ class ZidooRC:
             self._wifi_mac = device_config.wifi_mac_address
         else:
             self.id = host
-        self.event_loop = loop or asyncio.get_running_loop()
-        self.events = AsyncIOEventEmitter(self.event_loop)
+        self._event_loop = loop or asyncio.get_running_loop()
+        self.events = AsyncIOEventEmitter(self._event_loop)
         self._source_list = None
         self._media_type: MediaType | None = None
         self._host = f"{host}:{CONF_PORT}"
@@ -284,6 +312,8 @@ class ZidooRC:
         self._media_info = {}
         self._update_interval = SCAN_INTERVAL
         self._connect_lock = Lock()
+        self._update_task = None
+        self._update_lock = Lock()
 
     @property
     def state(self) -> States:
@@ -357,6 +387,7 @@ class ZidooRC:
         if self._state != States.OFF:
             await self.turn_off()
 
+    @cmd_wrapper
     async def async_power_toggle(self) -> None:
         """Turn off media player."""
         if self._state != States.OFF:
@@ -401,7 +432,7 @@ class ZidooRC:
             updated_data[MediaAttr.MEDIA_DURATION] = duration
         return updated_data
 
-    async def async_update_data(self) -> None:
+    async def update(self) -> None:
         """Update data callback."""
         # pylint: disable = R0915,R1702
         if not self.is_connected():
@@ -537,6 +568,7 @@ class ZidooRC:
                 self._power_status = True
                 await self._init_network()
                 return response
+            await self.start_polling()
         except Exception as ex:
             _LOGGER.error("Error during connection %s", ex)
         finally:
@@ -544,10 +576,49 @@ class ZidooRC:
 
     async def disconnect(self) -> None:
         """Async Close connection."""
+        await self.stop_polling()
         if self._session:
             await self._session.close()
         self._psk = None
         self._session = None
+
+    async def start_polling(self):
+        """Start polling task."""
+        if self._update_task is not None:
+            return
+        await self._update_lock.acquire()
+        if self._update_task is not None:
+            return
+        _LOGGER.debug("Start polling task for device %s", self.id)
+        self._update_task = self._event_loop.create_task(self._background_update_task())
+        self._update_lock.release()
+
+    async def stop_polling(self):
+        """Stop polling task."""
+        if self._update_task:
+            try:
+                self._update_task.cancel()
+            except CancelledError:
+                pass
+            self._update_task = None
+
+    async def _background_update_task(self):
+        self._reconnect_retry = 0
+        while True:
+            if not self._device_config.always_on:
+                if self.state == States.OFF:
+                    self._reconnect_retry += 1
+                    if self._reconnect_retry > CONNECTION_RETRIES:
+                        _LOGGER.debug("Stopping update task as the device %s is off", self.id)
+                        break
+                    _LOGGER.debug("Device %s is off, retry %s", self.id, self._reconnect_retry)
+                elif self._reconnect_retry > 0:
+                    self._reconnect_retry = 0
+                    _LOGGER.debug("Device %s is on again", self.id)
+            await self.update()
+            await asyncio.sleep(10)
+
+        self._update_task = None
 
     def is_connected(self) -> bool:
         """Check connection status.
@@ -585,6 +656,7 @@ class ZidooRC:
                 socket_instance.sendto(msg, ("<broadcast>", 9))
             socket_instance.close()
 
+    @cmd_wrapper
     async def send_key(self, key: str, log_errors: bool = False) -> bool:
         """Async Send Remote Control button command to device.
 
@@ -606,13 +678,13 @@ class ZidooRC:
         return False
 
     async def _req_json(
-        self,
-        url: str,
-        # pylint: disable = W0102
-        params: dict = {},
-        log_errors: bool = True,
-        timeout: int = TIMEOUT,
-        max_retries: int = RETRIES,
+            self,
+            url: str,
+            # pylint: disable = W0102
+            params: dict = {},
+            log_errors: bool = True,
+            timeout: int = TIMEOUT,
+            max_retries: int = RETRIES,
     ) -> json:
         """Async Send request command via HTTP json to player.
 
@@ -652,11 +724,11 @@ class ZidooRC:
             self._cookies = None
 
     async def _send_cmd(
-        self,
-        url: str,
-        params: dict = None,
-        log_errors: bool = True,
-        timeout: int = TIMEOUT,
+            self,
+            url: str,
+            params: dict = None,
+            log_errors: bool = True,
+            timeout: int = TIMEOUT,
     ):
         """Async Send request command via HTTP json to player.
 
@@ -793,9 +865,9 @@ class ZidooRC:
                 return_value["audio"] = result.get("audioInfo")
                 return_value["video"] = result.get("output")
                 if (
-                    return_value["status"] is True
-                    and return_value["uri"]
-                    and return_value["uri"] != self._last_video_path
+                        return_value["status"] is True
+                        and return_value["uri"]
+                        and return_value["uri"] != self._last_video_path
                 ):
                     self._last_video_path = return_value["uri"]
                     self._video_id = await self._get_id_from_uri(self._last_video_path)
@@ -1219,7 +1291,7 @@ class ZidooRC:
         return movie_id
 
     async def get_music_list(
-        self, music_type: int = 0, music_id: int = None, max_count: int = DEFAULT_COUNT
+            self, music_type: int = 0, music_id: int = None, max_count: int = DEFAULT_COUNT
     ) -> json:
         """Async Return list of music.
 
@@ -1259,7 +1331,7 @@ class ZidooRC:
             return response
 
     async def _get_album_list(
-        self, album_id: int = None, max_count: int = DEFAULT_COUNT
+            self, album_id: int = None, max_count: int = DEFAULT_COUNT
     ) -> json:
         """Async Return list of albums or album music.
 
@@ -1285,7 +1357,7 @@ class ZidooRC:
             return response
 
     async def _get_artist_list(
-        self, artist_id: int = None, max_count: int = DEFAULT_COUNT
+            self, artist_id: int = None, max_count: int = DEFAULT_COUNT
     ) -> json:
         """Async Return list of artists or artist music.
 
@@ -1345,7 +1417,7 @@ class ZidooRC:
             return response
 
     async def search_movies(
-        self, search_type: int | str = 0, max_count: int = DEFAULT_COUNT
+            self, search_type: int | str = 0, max_count: int = DEFAULT_COUNT
     ) -> json:
         """Async Return list of video based on query.
 
@@ -1371,11 +1443,11 @@ class ZidooRC:
             return response
 
     async def search_music(
-        self,
-        query: str,
-        search_type: int | str = 0,
-        max_count: int = DEFAULT_COUNT,
-        play: bool = False,
+            self,
+            query: str,
+            search_type: int | str = 0,
+            max_count: int = DEFAULT_COUNT,
+            play: bool = False,
     ) -> json:
         """Async Return list of music based on query.
 
@@ -1563,7 +1635,7 @@ class ZidooRC:
         return ids
 
     async def play_music(
-        self, media_id: int = None, media_type: int = "music", music_id: int = None
+            self, media_id: int = None, media_type: int = "music", music_id: int = None
     ) -> bool:
         """Async Play video content by id.
 
@@ -1684,7 +1756,7 @@ class ZidooRC:
         return return_value
 
     def generate_image_url(
-        self, media_id: int, media_type: int, width: int = 400, height: int = None
+            self, media_id: int, media_type: int, width: int = 400, height: int = None
     ) -> str:
         """Get link to thumbnail."""
         if media_type in ZVIDEO_SEARCH_TYPES:
@@ -1700,7 +1772,7 @@ class ZidooRC:
         return None
 
     def _generate_movie_image_url(
-        self, movie_id: int, width: int = 400, height: int = 600
+            self, movie_id: int, width: int = 400, height: int = 600
     ) -> str:
         """Get link to thumbnail.
 
@@ -1721,7 +1793,7 @@ class ZidooRC:
 
     # pylint: disable = W0613
     def _generate_music_image_url(
-        self, music_id: int, music_type: int = 0, width: int = 200, height: int = 200
+            self, music_id: int, music_type: int = 0, width: int = 200, height: int = 200
     ) -> str:
         """Get link to thumbnail.
 
@@ -1778,30 +1850,36 @@ class ZidooRC:
         # return await self._send_key(ZKEYS.ZKEY_POWER_ON, False)
         return True
 
+    @cmd_wrapper
     async def turn_off(self, standby=False):
         """Async Turn off media player."""
         return await self.send_key(
             ZKEYS.ZKEY_POWER_STANDBY if standby else ZKEYS.ZKEY_POWER_OFF
         )
 
+    @cmd_wrapper
     async def volume_up(self):
         """Async Volume up the media player."""
         return await self.send_key(ZKEYS.ZKEY_VOLUME_UP)
 
+    @cmd_wrapper
     async def volume_down(self):
         """Async Volume down media player."""
         return await self.send_key(ZKEYS.ZKEY_VOLUME_DOWN)
 
+    @cmd_wrapper
     async def mute_volume(self):
         """Async Send mute command."""
         return self.send_key(ZKEYS.ZKEY_MUTE)
 
+    @cmd_wrapper
     async def media_play_pause(self):
         """Async Send play or Pause command."""
         if self.state == States.PLAYING:
             return await self.media_pause()
         return await self.media_play()
 
+    @cmd_wrapper
     async def media_play(self) -> any:
         """Async Send play command."""
         # self._send_key(ZKEYS.ZKEY_OK)
@@ -1811,28 +1889,33 @@ class ZidooRC:
             return await self._req_json("MusicControl/v2/playOrPause")
         return await self.send_key(ZKEYS.ZKEY_MEDIA_PLAY)
 
+    @cmd_wrapper
     async def media_pause(self):
         """Async Send media pause command to media player."""
         if self._current_source == ZCONTENT_MUSIC:
             return await self._req_json("MusicControl/v2/playOrPause")
         return await self.send_key(ZKEYS.ZKEY_MEDIA_PAUSE)
 
+    @cmd_wrapper
     async def media_stop(self):
         """Async Send media pause command to media player."""
         return await self.send_key(ZKEYS.ZKEY_MEDIA_STOP)
 
+    @cmd_wrapper
     async def media_next_track(self):
         """Async Send next track command."""
         if self._current_source == ZCONTENT_MUSIC:
             return await self._req_json("MusicControl/v2/playNext")
         return await self.send_key(ZKEYS.ZKEY_MEDIA_NEXT)
 
+    @cmd_wrapper
     async def media_previous_track(self):
         """Async Send the previous track command."""
         if self._current_source == ZCONTENT_MUSIC:
             return await self._req_json("MusicControl/v2/playLast")
         await self.send_key(ZKEYS.ZKEY_MEDIA_PREVIOUS)
 
+    @cmd_wrapper
     async def set_media_position(self, position):
         """Async Set the current playing position.
 

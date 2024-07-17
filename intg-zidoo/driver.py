@@ -35,22 +35,6 @@ _configured_devices: dict[str, ZidooRC] = {}
 _R2_IN_STANDBY = False
 
 
-async def device_status_poller(interval: float = 10.0) -> None:
-    """Receiver data poller."""
-    while True:
-        await asyncio.sleep(interval)
-        if _R2_IN_STANDBY:
-            continue
-        try:
-            for device in _configured_devices.values():
-                if device.state == States.OFF:
-                    continue
-                # TODO #20  run in parallel, join, adjust interval duration based on execution time for next update
-                await device.async_update_data()
-        except (KeyError, ValueError):
-            pass
-
-
 @api.listens_to(ucapi.Events.CONNECT)
 async def on_r2_connect_cmd() -> None:
     """Connect all configured receivers when the Remote Two sends the connect command."""
@@ -59,7 +43,7 @@ async def on_r2_connect_cmd() -> None:
     for device in _configured_devices.values():
         # start background task
         await device.connect()
-        await device.async_update_data()
+        await _LOOP.create_task(device.update())
         await api.set_device_state(ucapi.DeviceStates.CONNECTED)
 
 
@@ -100,7 +84,7 @@ async def on_r2_exit_standby() -> None:
 
     for device in _configured_devices.values():
         # start background task
-        await device.async_update_data()
+        await _LOOP.create_task(device.update())
 
 
 @api.listens_to(ucapi.Events.SUBSCRIBE_ENTITIES)
@@ -316,7 +300,7 @@ def _configure_new_device(
 
     if connect:
         # start background connection task
-        _LOOP.create_task(device.async_update_data())
+        _LOOP.create_task(device.update())
         _LOOP.create_task(on_device_connected(device_config.id))
     _register_available_entities(device_config, device)
 
@@ -423,9 +407,8 @@ async def main():
     for device in _configured_devices.values():
         if device.state in [States.OFF, States.UNKNOWN]:
             continue
-        _LOOP.create_task(device.async_update_data())
+        _LOOP.create_task(device.update())
 
-    _LOOP.create_task(device_status_poller())
     # Patched method
     # pylint: disable = W0212
     IntegrationAPI._broadcast_ws_event = patched_broadcast_ws_event

@@ -317,7 +317,15 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
                     "de": "Wähle deinen Zidoo",
                     "fr": "Choisissez votre décodeur Zidoo",
                 },
-            }
+            },
+            {
+                "id": "always_on",
+                "label": {
+                    "en": "Keep connection alive (faster initialization, but consumes more battery)",
+                    "fr": "Conserver la connexion active (lancement plus rapide, mais consomme plus de batterie)",
+                },
+                "field": {"checkbox": {"value": False}},
+            },
         ],
     )
 
@@ -333,6 +341,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     """
     # pylint: disable = W0718
     host = msg.input_values["choice"]
+    always_on = msg.input_values.get("always_on") == "true"
     _LOG.debug(
         "Chosen Zidoo: %s. Trying to connect and retrieve device information...", host
     )
@@ -368,6 +377,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
             address=host,
             net_mac_address=net_mac_address,
             wifi_mac_address=wifi_mac_address,
+            always_on=always_on
         )
     )  # triggers ZidooAVR instance creation
     config.devices.store()
