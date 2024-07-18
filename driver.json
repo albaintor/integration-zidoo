@@ -5,13 +5,13 @@
   "name": {
     "en": "Zidoo TV"
   },
-  "icon": "uc:integration",
+  "icon": "custom:zidoo.png",
   "description": {
     "en": "Control your Zidoo device with Remote Two.",
     "de": "Steuere Zidoo mit Remote Two.",
     "fr": "Contrôler votre Zidoo avec Remote Two."
   },
-  "port": 8092,
+  "port": 9096,
   "developer": {
     "name": "Unfolded Circle ApS",
     "email": "hello@unfoldedcircle.com",
