@@ -54,18 +54,18 @@ jobs:
             bash -c \
             "cd /workspace && \
               python -m pip install -r requirements.txt && \
-              pyinstaller --clean --onefile --name intg-zidoo intg-zidoo/driver.py"
+              pyinstaller --clean --onefile --name driver intg-zidoo/driver.py"
 
       - name: Add version
         run: |
-          mkdir -p artifacts
+          mkdir -p artifacts/bin
           cd artifacts
           echo ${{ env.VERSION }} > version.txt
           
       - name: Prepare artifacts
         shell: bash
         run: |
-          cp dist/intg-zidoo artifacts/
+          cp dist/driver artifacts/bin
           cp driver.json artifacts/
           cp zidoo.png artifacts/
           echo "ARTIFACT_NAME=uc-intg-${{ env.INTG_NAME }}-${{ env.VERSION }}-aarch64" >> $GITHUB_ENV

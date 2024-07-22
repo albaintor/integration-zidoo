@@ -13,3 +13,6 @@ _Changes in the next release_
 
 ## v0.0.1 - 2024-03-16
 ### Initial release
+
+## v1.0.0 - 2024-07-22
+### Optimizations for battery usage and upload to remote
