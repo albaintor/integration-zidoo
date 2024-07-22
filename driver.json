@@ -11,8 +11,6 @@
     "de": "Steuere Zidoo mit Remote Two.",
     "fr": "Contrôler votre Zidoo avec Remote Two."
   },
-  "port": 9096,
-  "device_discovery": true,
   "developer": {
     "name": "Unfolded Circle ApS",
     "email": "hello@unfoldedcircle.com",
