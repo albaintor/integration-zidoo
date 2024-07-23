@@ -586,12 +586,8 @@ class ZidooRC:
         """Start polling task."""
         if self._update_task is not None:
             return
-        await self._update_lock.acquire()
-        if self._update_task is not None:
-            return
         _LOGGER.debug("Start polling task for device %s", self.id)
         self._update_task = self._event_loop.create_task(self._background_update_task())
-        self._update_lock.release()
 
     async def stop_polling(self):
         """Stop polling task."""
