@@ -60,7 +60,9 @@ jobs:
         run: |
           mkdir -p artifacts/bin
           cd artifacts
-          echo ${{ env.VERSION }} > version.txt
+          DRIVER_VERSION="v$(jq .version -r driver.json)"
+          # echo ${{ env.VERSION }} > version.txt
+          echo ${{ DRIVER_VERSION }} > version.txt
           
       - name: Prepare artifacts
         shell: bash
