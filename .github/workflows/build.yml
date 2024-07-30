@@ -58,9 +58,9 @@ jobs:
 
       - name: Add version
         run: |
+          DRIVER_VERSION="v$(jq .version -r driver.json)"
           mkdir -p artifacts/bin
           cd artifacts
-          DRIVER_VERSION="v$(jq .version -r driver.json)"
           # echo ${{ env.VERSION }} > version.txt
           echo $DRIVER_VERSION > version.txt
           
