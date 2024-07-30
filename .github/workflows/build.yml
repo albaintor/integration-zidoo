@@ -62,7 +62,7 @@ jobs:
           cd artifacts
           DRIVER_VERSION="v$(jq .version -r driver.json)"
           # echo ${{ env.VERSION }} > version.txt
-          echo ${{ DRIVER_VERSION }} > version.txt
+          echo $DRIVER_VERSION > version.txt
           
       - name: Prepare artifacts
         shell: bash
