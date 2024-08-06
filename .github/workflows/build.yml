@@ -30,7 +30,8 @@ jobs:
       - name: Fetch all tags to determine version
         run: |
           git fetch origin +refs/tags/*:refs/tags/*
-          echo "VERSION=$(git describe --match "v[0-9]*" --tags HEAD --always)" >> $GITHUB_ENV
+          echo VERSION="v$(jq .version -r driver.json)" >> $GITHUB_ENV
+        # echo "VERSION=$(git describe --match "v[0-9]*" --tags HEAD --always)" >> $GITHUB_ENV
 
       - name: Verify driver.json version for release build
         if: contains(github.ref, 'tags/v')
