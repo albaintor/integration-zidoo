@@ -22,7 +22,7 @@ from typing import TypeVar, ParamSpec, Callable, Concatenate, Awaitable, Any, Co
 import ucapi
 from aiohttp import ClientError, ClientSession, CookieJar
 from config import DeviceInstance
-from pyee import AsyncIOEventEmitter
+from pyee.asyncio import AsyncIOEventEmitter
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import MediaType
 from yarl import URL
