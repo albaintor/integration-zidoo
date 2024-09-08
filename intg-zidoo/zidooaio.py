@@ -493,17 +493,17 @@ class ZidooRC:
                     self._last_update = datetime.utcnow()
 
                 if title != self.media_title:
-                    updated_data[MediaAttr.MEDIA_TITLE] = title
+                    updated_data[MediaAttr.MEDIA_TITLE] = self.media_title
                 if album != self.media_album_name:
-                    updated_data[MediaAttr.MEDIA_ALBUM] = album
+                    updated_data[MediaAttr.MEDIA_ALBUM] = self.media_album_name
                 if artist != self.media_artist:
-                    updated_data[MediaAttr.MEDIA_ARTIST] = artist
+                    updated_data[MediaAttr.MEDIA_ARTIST] = self.media_artist
                 if duration != self.media_duration:
-                    updated_data[MediaAttr.MEDIA_DURATION] = duration
+                    updated_data[MediaAttr.MEDIA_DURATION] =  self.media_duration
                 if position != self.media_position:
-                    updated_data[MediaAttr.MEDIA_POSITION] = position
+                    updated_data[MediaAttr.MEDIA_POSITION] = self.media_position
                 if source != self.source:
-                    updated_data[MediaAttr.SOURCE] = source
+                    updated_data[MediaAttr.SOURCE] = self.source
                 new_image_url = self.generate_current_image_url()
                 if new_image_url is None:
                     new_image_url = ""
