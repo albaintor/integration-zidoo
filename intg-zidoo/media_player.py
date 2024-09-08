@@ -24,16 +24,6 @@ from zidooaio import ZKEYS, ZidooRC
 
 _LOG = logging.getLogger(__name__)
 
-# Mapping of a device state to a media-player entity state
-MEDIA_PLAYER_STATE_MAPPING = {
-    zidooaio.States.ON: States.ON,
-    zidooaio.States.OFF: States.OFF,
-    zidooaio.States.PAUSED: States.PAUSED,
-    zidooaio.States.PLAYING: States.PLAYING,
-    zidooaio.States.UNAVAILABLE: States.UNAVAILABLE,
-    zidooaio.States.UNKNOWN: States.UNKNOWN,
-}
-
 SIMPLE_COMMANDS = [
     ZKEYS.ZKEY_POWER_STANDBY,
     ZKEYS.ZKEY_POWER_REBOOT,
@@ -234,7 +224,7 @@ class ZidooMediaPlayer(MediaPlayer):
             update[Attributes.SOURCE_LIST] = self._device.source_list
 
         if Attributes.STATE in update:
-            state = state_from_device(update[Attributes.STATE])
+            state = update[Attributes.STATE]
             attributes = self._key_update_helper(Attributes.STATE, state, attributes)
 
         for attr in [
@@ -276,14 +266,3 @@ class ZidooMediaPlayer(MediaPlayer):
 
         return attributes
 
-
-def state_from_device(client_state: zidooaio.States) -> States:
-    """
-    Convert Device state to UC API media-player state.
-
-    :param client_state: Orange STB  state
-    :return: UC API media_player state
-    """
-    if client_state in MEDIA_PLAYER_STATE_MAPPING:
-        return MEDIA_PLAYER_STATE_MAPPING[client_state]
-    return States.UNKNOWN

@@ -102,9 +102,10 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
         device_id = device_from_entity_id(entity_id)
         if device_id in _configured_devices:
             device = _configured_devices[device_id]
-            state = media_player.state_from_device(device.state)
+            attributes = device.attributes
+            _LOG.debug("Subscribe entity %s, attributes : %s", entity_id, attributes)
             api.configured_entities.update_attributes(
-                entity_id, {ucapi.media_player.Attributes.STATE: state}
+                entity_id, attributes
             )
             continue
 
@@ -355,35 +356,6 @@ async def _async_remove(device: ZidooRC) -> None:
     device.events.remove_all_listeners()
 
 
-async def patched_broadcast_ws_event(
-    self, msg: str, msg_data: dict[str, Any], category: uc.EventCategory
-) -> None:
-    """
-    Send the given event-message to all connected WebSocket clients.
-
-    If a client is no longer connected, a log message is printed and the remaining
-    clients are notified.
-
-    :param msg: event message name
-    :param msg_data: message data payload
-    :param category: event category
-    """
-    data = {"kind": "event", "msg": msg, "msg_data": msg_data, "cat": category}
-    data_dump = json.dumps(data)
-    # filter fields
-    if _LOG.isEnabledFor(logging.DEBUG):
-        data_log = json.dumps(data) if filter_log_msg_data(data) else data_dump
-
-    # pylint: disable = W0212
-    for websocket in self._clients.copy():
-        if _LOG.isEnabledFor(logging.DEBUG):
-            _LOG.debug("[%s] ->: %s", websocket.remote_address, data_log)
-        try:
-            await websocket.send(data_dump)
-        except websockets.exceptions.WebSocketException:
-            pass
-
-
 async def main():
     """Start the Remote Two integration driver."""
     logging.basicConfig()
@@ -409,9 +381,6 @@ async def main():
             continue
         _LOOP.create_task(device.update())
 
-    # Patched method
-    # pylint: disable = W0212
-    IntegrationAPI._broadcast_ws_event = patched_broadcast_ws_event
     await api.init("driver.json", setup_flow.driver_setup_handler)
 
 

@@ -1,15 +1,15 @@
 {
   "driver_id": "zidootv_driver",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "min_core_api": "0.20.0",
   "name": {
     "en": "Zidoo TV"
   },
   "icon": "custom:zidoo.png",
   "description": {
-    "en": "Control your Zidoo device with Remote Two or Remote Three.",
+    "en": "Control your Zidoo device with Remote Two or Remote 3.",
     "de": "Steuere Zidoo mit Remote Two oder Remote Three.",
-    "fr": "Contrôler votre Zidoo avec Remote Two ou Remote Three."
+    "fr": "Contrôler votre Zidoo avec Remote Two ou Remote 3."
   },
   "developer": {
     "name": "Albaintor",

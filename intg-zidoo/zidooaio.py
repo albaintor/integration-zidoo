@@ -23,7 +23,7 @@ import ucapi
 from aiohttp import ClientError, ClientSession, CookieJar
 from config import DeviceInstance
 from pyee.asyncio import AsyncIOEventEmitter
-from ucapi.media_player import Attributes as MediaAttr
+from ucapi.media_player import Attributes as MediaAttr, States
 from ucapi.media_player import MediaType
 from yarl import URL
 
@@ -43,17 +43,6 @@ class Events(IntEnum):
     UPDATE = 2
     IP_ADDRESS_CHANGED = 3
     DISCONNECTED = 4
-
-
-class States(IntEnum):
-    """State of a connected devoce."""
-
-    UNKNOWN = 0
-    UNAVAILABLE = 1
-    OFF = 2
-    ON = 3
-    PLAYING = 4
-    PAUSED = 5
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -288,14 +277,14 @@ class ZidooRC:
             self.id = host
         self._event_loop = loop or asyncio.get_running_loop()
         self.events = AsyncIOEventEmitter(self._event_loop)
-        self._source_list = None
+        self._source_list: dict[str, str] | None = None
         self._media_type: MediaType | None = None
         self._host = f"{host}:{CONF_PORT}"
         self._psk = psk
         self._session = None
         self._cookies = None
         self._content_mapping = []
-        self._current_source = None
+        self._current_source: str | None = None
         self._app_list = {}
         self._power_status = False
         self._video_id = -1
@@ -321,35 +310,78 @@ class ZidooRC:
         return self._state
 
     @property
+    def attributes(self) -> dict[str, any]:
+        """Return the device attributes."""
+        updated_data = {
+            MediaAttr.STATE: self.state,
+            MediaAttr.MEDIA_POSITION: self.media_position if self.media_position else 0,
+            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0
+        }
+        if self.media_type:
+            updated_data[MediaAttr.MEDIA_TYPE] = self.media_type
+        if self.media_artist:
+            updated_data[MediaAttr.MEDIA_ARTIST] = self.media_artist
+        if self.media_title:
+            updated_data[MediaAttr.MEDIA_TITLE] = self.media_title
+        if self.media_album_name:
+            updated_data[MediaAttr.MEDIA_ALBUM] = self.media_album_name
+        if self.source:
+            updated_data[MediaAttr.SOURCE] = self.source
+        if self.source:
+            updated_data[MediaAttr.SOURCE_LIST] = self.source_list
+        if self.media_image_url:
+            updated_data[MediaAttr.MEDIA_IMAGE_URL] = self.media_image_url
+        return updated_data
+
+    @property
     def media_type(self):
         """Return current media type."""
         return self._media_type
 
     @property
-    def source(self):
+    def source(self) -> str:
         """Return the current input source."""
         return self._current_source
 
     @property
-    def source_list(self):
+    def source_list(self) -> dict[str, str]:
         """List of available input sources."""
         return self._source_list
 
     @property
     def media_title(self):
         """Title of current playing media."""
-        media_info = self._media_info
-        title = media_info.get("movie_name")
-        if title is None:
-            title = media_info.get("episode_name")
+        titles = []
+        title = self._media_info.get("movie_name")
         if title is not None:
-            return title
-        return media_info.get("title")
+            titles.append(title)
+        title = self._media_info.get("title")
+        if title is not None:
+            titles.append(title)
+        if self._media_info.get("season") or self._media_info.get("episode"):
+            episode = ""
+            if self._media_info.get("season"):
+                episode = "S"+str(self._media_info.get("season"))
+            if self._media_info.get("episode"):
+                episode += "E"+str(self._media_info.get("episode"))
+            titles.append(episode)
+        if len(titles) > 0:
+            return " - ".join(titles)
+        return ""
 
     @property
     def media_artist(self):
         """Artist of current playing media."""
-        return self._media_info.get("artist")
+        titles = []
+        if self._media_info.get("season_name"):
+            titles.append(self._media_info.get("season_name"))
+        if self._media_info.get("episode_name"):
+            titles.append(self._media_info.get("episode_name"))
+        if self._media_info.get("artist"):
+            titles.append(self._media_info.get("artist"))
+        if len(titles) > 0:
+            return " - ".join(titles)
+        return ""
 
     @property
     def media_album_name(self):
@@ -403,35 +435,6 @@ class ZidooRC:
             for key in sources:
                 self._source_list.append(key)
 
-    def _filter_updated_media_info(self, media_info: any, updated_data: any) -> any:
-        """Title of current playing media."""
-        title = media_info.get("movie_name")
-        if title is None:
-            title = media_info.get("episode_name")
-        if title is None:
-            title = media_info.get("title")
-        artist = media_info.get("artist")
-        album = media_info.get("album")
-        duration = media_info.get("duration")
-        if duration:
-            duration = float(duration) / 1000
-        position = media_info.get("position")
-        if position:
-            position = float(position) / 1000
-        if title != self.media_title:
-            updated_data[MediaAttr.MEDIA_TITLE] = title
-        if album != self.media_album_name:
-            updated_data[MediaAttr.MEDIA_ALBUM] = album
-        if artist != self.media_artist:
-            updated_data[MediaAttr.MEDIA_ARTIST] = artist
-        if duration != self.media_duration:
-            updated_data[MediaAttr.MEDIA_POSITION] = position
-            updated_data[MediaAttr.MEDIA_DURATION] = duration
-        if position != self.media_position:
-            updated_data[MediaAttr.MEDIA_POSITION] = position
-            updated_data[MediaAttr.MEDIA_DURATION] = duration
-        return updated_data
-
     async def update(self) -> None:
         """Update data callback."""
         # pylint: disable = R0915,R1702
@@ -453,11 +456,16 @@ class ZidooRC:
                 image_url = self.generate_current_image_url()
                 if image_url is None:
                     image_url = ""
-                playing_info = await self.get_playing_info()
 
-                # Compare new and old data to filter only changed attributes
-                self._filter_updated_media_info(playing_info, updated_data)
+                # Store current data to compare what's changed next
+                title = self.media_title
+                artist = self.media_artist
+                album = self.media_album_name
+                duration = self.media_duration
+                position = self.media_position
+
                 self._media_info = {}
+                playing_info = await self.get_playing_info()
                 if playing_info is None or not playing_info:
                     # self._media_type = MediaType.APP # None
                     media_type = MediaType.VIDEO
@@ -484,8 +492,18 @@ class ZidooRC:
                         media_type = MediaType.VIDEO  # None
                     self._last_update = datetime.utcnow()
 
-                if source != self._current_source:
-                    updated_data[MediaAttr.SOURCE] = self._current_source
+                if title != self.media_title:
+                    updated_data[MediaAttr.MEDIA_TITLE] = title
+                if album != self.media_album_name:
+                    updated_data[MediaAttr.MEDIA_ALBUM] = album
+                if artist != self.media_artist:
+                    updated_data[MediaAttr.MEDIA_ARTIST] = artist
+                if duration != self.media_duration:
+                    updated_data[MediaAttr.MEDIA_DURATION] = duration
+                if position != self.media_position:
+                    updated_data[MediaAttr.MEDIA_POSITION] = position
+                if source != self.source:
+                    updated_data[MediaAttr.SOURCE] = source
                 new_image_url = self.generate_current_image_url()
                 if new_image_url is None:
                     new_image_url = ""
@@ -494,7 +512,6 @@ class ZidooRC:
             if media_type != self._media_type:
                 self._media_type = media_type
                 updated_data[MediaAttr.MEDIA_TYPE] = self._media_type
-
         except Exception:  # pylint: disable=broad-except
             return
 
@@ -785,7 +802,7 @@ class ZidooRC:
         """Async Return last known app."""
         return self._current_source
 
-    async def load_source_list(self) -> dict:
+    async def load_source_list(self) -> dict[str, str]:
         """Async Return app list."""
         return await self.get_app_list()
 
@@ -1128,7 +1145,7 @@ class ZidooRC:
         # api_volume = str(int(round(volume * 100)))
         return 0
 
-    async def get_app_list(self, log_errors=True) -> dict:
+    async def get_app_list(self, log_errors=True) -> dict[str, str]:
         """Async Get the list of installed apps.
 
         Results
