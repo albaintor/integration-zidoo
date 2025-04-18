@@ -14,7 +14,7 @@ import socket
 import struct
 import urllib.parse
 from asyncio import AbstractEventLoop, Lock, CancelledError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import IntEnum, StrEnum
 from functools import wraps
 from typing import TypeVar, ParamSpec, Callable, Concatenate, Awaitable, Any, Coroutine
@@ -303,6 +303,7 @@ class ZidooRC:
         self._connect_lock = Lock()
         self._update_task = None
         self._update_lock = Lock()
+        self._media_position_updated_at: datetime = datetime.now(timezone.utc)
 
     @property
     def state(self) -> States:
@@ -312,10 +313,12 @@ class ZidooRC:
     @property
     def attributes(self) -> dict[str, any]:
         """Return the device attributes."""
+        self._media_position_updated_at = datetime.now(timezone.utc)
         updated_data = {
             MediaAttr.STATE: self.state,
             MediaAttr.MEDIA_POSITION: self.media_position if self.media_position else 0,
-            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0
+            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0,
+            "media_position_updated_at": self.media_position_updated_at
         }
         if self.media_type:
             updated_data[MediaAttr.MEDIA_TYPE] = self.media_type
@@ -403,6 +406,11 @@ class ZidooRC:
         if position:
             return float(position) / 1000
         return None
+
+    @property
+    def media_position_updated_at(self):
+        """Return timestamp of urrent media position."""
+        return self._media_position_updated_at.isoformat()
 
     @property
     def media_image_url(self):
