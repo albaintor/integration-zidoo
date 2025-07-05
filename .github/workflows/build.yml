@@ -13,7 +13,7 @@ on:
 
 env:
   INTG_NAME: zidoo
-  HASH_FILENAME: uc-intg-zidoo.hash
+  HASH_FILENAME: uc-src.hash
   # Python version to use in the builder image. See https://hub.docker.com/r/unfoldedcircle/r2-pyinstaller for possible versions.
   PYTHON_VER: 3.11.6-0.2.0
 
@@ -55,7 +55,7 @@ jobs:
             bash -c \
             "cd /workspace && \
               python -m pip install -r requirements.txt && \
-              pyinstaller --clean --onedir --name driver intg-zidoo/driver.py"
+              pyinstaller --clean --onedir --name driver src/driver.py"
 
       - name: Add version
         run: |

@@ -329,6 +329,12 @@ def on_device_added(device: config.DeviceInstance) -> None:
     _configure_new_device(device, connect=False)
 
 
+def on_device_updated(device: config.DeviceInstance) -> None:
+    """Handle an updated device in the configuration."""
+    _LOG.debug("Device config updated: %s, reconnect with new configuration", device)
+    _configure_new_device(device, connect=True)
+
+
 def on_device_removed(device: config.DeviceInstance | None) -> None:
     """Handle a removed device in the configuration."""
     if device is None:
@@ -361,7 +367,7 @@ async def main():
     logging.basicConfig()
 
     level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
-    logging.getLogger("avr").setLevel(level)
+    logging.getLogger("zidooaio").setLevel(level)
     logging.getLogger("discover").setLevel(level)
     logging.getLogger("driver").setLevel(level)
     logging.getLogger("media_player").setLevel(level)
@@ -369,7 +375,7 @@ async def main():
     logging.getLogger("setup_flow").setLevel(level)
 
     config.devices = config.Devices(
-        api.config_dir_path, on_device_added, on_device_removed
+        api.config_dir_path, on_device_added, on_device_removed, on_device_updated
     )
     for device in config.devices.all():
         _LOG.debug("UC Zidoo device %s %s", device.id, device.address)
