@@ -57,6 +57,8 @@ class ZidooMediaPlayer(MediaPlayer):
             Features.SELECT_SOURCE,
             Features.HOME,
             Features.MEDIA_TITLE,
+            Features.MEDIA_ARTIST,
+            Features.MEDIA_ALBUM,
             Features.MEDIA_IMAGE_URL,
             Features.MEDIA_TYPE,
             Features.PLAY_PAUSE,
@@ -85,6 +87,8 @@ class ZidooMediaPlayer(MediaPlayer):
             Attributes.SOURCE_LIST: [],
             Attributes.MEDIA_IMAGE_URL: "",
             Attributes.MEDIA_TITLE: "",
+            Attributes.MEDIA_ALBUM: "",
+            Attributes.MEDIA_ARTIST: "",
             Attributes.MEDIA_POSITION: 0,
             Attributes.MEDIA_DURATION: 0,
             Attributes.MEDIA_TYPE: MediaType.VIDEO

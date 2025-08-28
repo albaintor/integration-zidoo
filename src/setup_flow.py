@@ -34,10 +34,12 @@ class SetupSteps(IntEnum):
     """Enumeration of setup steps to keep track of user data responses."""
 
     INIT = 0
-    CONFIGURATION_MODE = 1
-    DISCOVER = 2
-    DEVICE_CHOICE = 3
-    RECONFIGURE = 4
+    WORKFLOW_MODE = 1
+    DEVICE_CONFIGURATION_MODE = 2
+    DISCOVER = 3
+    DEVICE_CHOICE = 4
+    RECONFIGURE = 5
+    BACKUP_RESTORE = 6
 
 
 _setup_step = SetupSteps.INIT
@@ -80,20 +82,37 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
     global _setup_step
     global _cfg_add_device
 
+    _LOG.debug("driver_setup_handler")
+
     if isinstance(msg, DriverSetupRequest):
         _setup_step = SetupSteps.INIT
         _cfg_add_device = False
         return await handle_driver_setup(msg)
     if isinstance(msg, UserDataResponse):
-        _LOG.debug(msg)
-        if _setup_step == SetupSteps.CONFIGURATION_MODE and "action" in msg.input_values:
-            return await handle_configuration_mode(msg)
+        _LOG.debug("Setup handler message : step %s, message : %s", _setup_step, msg)
+        if _setup_step == SetupSteps.WORKFLOW_MODE:
+            if msg.input_values.get("configuration_mode", "") == "normal":
+                _setup_step = SetupSteps.DEVICE_CONFIGURATION_MODE
+                _LOG.debug("Starting normal setup workflow")
+                return _user_input_discovery
+            else:
+                _LOG.debug("User requested backup/restore of configuration")
+                return await _handle_backup_restore_step()
+        if _setup_step == SetupSteps.DEVICE_CONFIGURATION_MODE:
+            if "action" in msg.input_values:
+                _LOG.debug("Setup flow starts with existing configuration")
+                return await handle_configuration_mode(msg)
+            else:
+                _LOG.debug("Setup flow configuration mode")
+                return await _handle_discovery(msg)
         if _setup_step == SetupSteps.DISCOVER and "address" in msg.input_values:
             return await _handle_discovery(msg)
         if _setup_step == SetupSteps.DEVICE_CHOICE and "choice" in msg.input_values:
             return await handle_device_choice(msg)
         if _setup_step == SetupSteps.RECONFIGURE:
             return await _handle_device_reconfigure(msg)
+        if _setup_step == SetupSteps.BACKUP_RESTORE:
+            return await _handle_backup_restore(msg)
         _LOG.error("No or invalid user response was received: %s", msg)
     elif isinstance(msg, AbortDriverSetup):
         _LOG.info("Setup was aborted with code: %s", msg.error)
@@ -118,14 +137,13 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
     """
     global _setup_step
 
-    reconfigure = _msg.reconfigure
-    _LOG.debug("Starting driver setup, reconfigure=%s", reconfigure)
-
     # workaround for web-configurator not picking up first response
     await asyncio.sleep(1)
 
+    reconfigure = _msg.reconfigure
+    _LOG.debug("Handle driver setup, reconfigure=%s", reconfigure)
     if reconfigure:
-        _setup_step = SetupSteps.CONFIGURATION_MODE
+        _setup_step = SetupSteps.DEVICE_CONFIGURATION_MODE
 
         # get all configured devices for the user to choose from
         dropdown_devices = []
@@ -180,6 +198,16 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
             # dummy entry if no devices are available
             dropdown_devices.append({"id": "", "label": {"en": "---"}})
 
+        dropdown_actions.append(
+            {
+                "id": "backup_restore",
+                "label": {
+                    "en": "Backup or restore devices configuration",
+                    "fr": "Sauvegarder ou restaurer la configuration des appareils",
+                },
+            },
+        )
+
         return RequestUserInput(
             {"en": "Configuration mode", "de": "Konfigurations-Modus"},
             [
@@ -203,11 +231,43 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
                 },
             ],
         )
-
-    # Initial setup, make sure we have a clean configuration
-    config.devices.clear()  # triggers device instance removal
-    _setup_step = SetupSteps.DISCOVER
-    return _user_input_discovery
+    else:
+        # Initial setup, make sure we have a clean configuration
+        config.devices.clear()  # triggers device instance removal
+        _setup_step = SetupSteps.WORKFLOW_MODE
+        return RequestUserInput(
+            {"en": "Configuration mode", "de": "Konfigurations-Modus"},
+            [
+                {
+                    "field": {
+                        "dropdown": {
+                            "value": "normal",
+                            "items": [
+                                {
+                                    "id": "normal",
+                                    "label": {
+                                        "en": "Start the configuration of the integration",
+                                        "fr": "Démarrer la configuration de l'intégration",
+                                    },
+                                },
+                                {
+                                    "id": "backup_restore",
+                                    "label": {
+                                        "en": "Backup or restore devices configuration",
+                                        "fr": "Sauvegarder ou restaurer la configuration des appareils",
+                                    },
+                                },
+                            ],
+                        }
+                    },
+                    "id": "configuration_mode",
+                    "label": {
+                        "en": "Configuration mode",
+                        "fr": "Mode de configuration",
+                    },
+                }
+            ],
+        )
 
 
 async def handle_configuration_mode(msg: UserDataResponse) -> RequestUserInput | SetupComplete | SetupError:
@@ -226,6 +286,8 @@ async def handle_configuration_mode(msg: UserDataResponse) -> RequestUserInput |
 
     action = msg.input_values["action"]
 
+    _LOG.debug("Handle configuration mode")
+
     # workaround for web-configurator not picking up first response
     await asyncio.sleep(1)
 
@@ -239,8 +301,6 @@ async def handle_configuration_mode(msg: UserDataResponse) -> RequestUserInput |
                 return SetupError(error_type=IntegrationSetupError.OTHER)
             config.devices.store()
             return SetupComplete()
-        case "reset":
-            config.devices.clear()  # triggers device instance removal
         case "configure":
             # Reconfigure device if the identifier has changed
             choice = msg.input_values["choice"]
@@ -254,8 +314,8 @@ async def handle_configuration_mode(msg: UserDataResponse) -> RequestUserInput |
 
             return RequestUserInput(
                 {
-                    "en": "Configure your Orange decoder",
-                    "fr": "Configurez votre décodeur Orange",
+                    "en": "Configure your Zidoo device",
+                    "fr": "Configurez votre appareil Zidoo",
                 },
                 [
                     {
@@ -273,6 +333,10 @@ async def handle_configuration_mode(msg: UserDataResponse) -> RequestUserInput |
                     },
                 ],
             )
+        case "reset":
+            config.devices.clear()  # triggers device instance removal
+        case "backup_restore":
+            return await _handle_backup_restore_step()
         case _:
             _LOG.error("Invalid configuration action: %s", action)
             return SetupError(error_type=IntegrationSetupError.OTHER)
@@ -294,6 +358,8 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
     global _setup_step
 
     dropdown_items = []
+    _LOG.debug("Handle driver setup with discovery")
+
     address = msg.input_values["address"]
 
     # pylint: disable = W0718
@@ -418,6 +484,35 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     _LOG.info("Setup successfully completed for %s (%s)", friendly_name, unique_id)
     return SetupComplete()
 
+async def _handle_backup_restore_step() -> RequestUserInput:
+    global _setup_step
+
+    _setup_step = SetupSteps.BACKUP_RESTORE
+    current_config = config.devices.export()
+
+    _LOG.debug("Handle backup/restore step")
+
+    return RequestUserInput(
+        {
+            "en": "Backup or restore devices configuration (all existing devices will be removed)",
+            "fr": "Sauvegarder ou restaurer la configuration des appareils (tous les appareils existants seront supprimés)",
+        },
+        [
+            {
+                "field": {
+                    "textarea": {
+                        "value": current_config,
+                    }
+                },
+                "id": "config",
+                "label": {
+                    "en": "Devices configuration",
+                    "fr": "Configuration des appareils",
+                },
+            },
+        ],
+    )
+
 
 async def _handle_device_reconfigure(msg: UserDataResponse) -> SetupComplete | SetupError:
     """
@@ -444,4 +539,27 @@ async def _handle_device_reconfigure(msg: UserDataResponse) -> SetupComplete | S
     await asyncio.sleep(1)
     _LOG.info("Setup successfully completed for %s", _reconfigured_device.name)
 
+    return SetupComplete()
+
+
+async def _handle_backup_restore(msg: UserDataResponse) -> SetupComplete | SetupError:
+    """
+    Process import of configuration
+
+    :param msg: response data from the requested user data
+    :return: the setup action on how to continue: SetupComplete after updating configuration
+    """
+    # flake8: noqa:F824
+    # pylint: disable=W0602
+    global _reconfigured_device
+
+    _LOG.debug("Handle backup/restore")
+    updated_config = msg.input_values["config"]
+    _LOG.info("Replacing configuration with : %s", updated_config)
+    if not config.devices.import_config(updated_config):
+        _LOG.error("Setup error : unable to import updated configuration", updated_config)
+        return SetupError(error_type=IntegrationSetupError.OTHER)
+    _LOG.debug("Configuration imported successfully")
+
+    await asyncio.sleep(1)
     return SetupComplete()
