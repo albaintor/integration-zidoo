@@ -10,6 +10,7 @@ References
 import asyncio
 import json
 import logging
+import re
 import socket
 import struct
 import urllib.parse
@@ -249,7 +250,7 @@ class ZidooRC:
 
     def __init__(
             self,
-            host: str,
+            host: str | None = None,
             device_config: DeviceInstance | None = None,
             psk: str = None,
             mac: str = None,
@@ -273,6 +274,8 @@ class ZidooRC:
             self.id = device_config.id
             self._ethernet_mac = device_config.net_mac_address
             self._wifi_mac = device_config.wifi_mac_address
+            if host is None:
+                host = device_config.address
         else:
             self.id = host
         self._event_loop = loop or asyncio.get_running_loop()
@@ -358,16 +361,21 @@ class ZidooRC:
         title = self._media_info.get("movie_name")
         if title is not None:
             titles.append(title)
+        has_episode = False
         title = self._media_info.get("title")
         if title is not None:
-            titles.append(title)
-        if self._media_info.get("season") or self._media_info.get("episode"):
-            episode = ""
-            if self._media_info.get("season"):
-                episode = "S"+str(self._media_info.get("season"))
-            if self._media_info.get("episode"):
-                episode += "E"+str(self._media_info.get("episode"))
-            titles.append(episode)
+            if title != self._media_info.get("movie_name"):
+                titles.append(title)
+            if re.search("S[0-9]+E[0-9]+", title) or re.search("S[0-9]+$", title):
+                has_episode = True
+        if not has_episode:
+            if self._media_info.get("season") or self._media_info.get("episode"):
+                episode = ""
+                if self._media_info.get("season"):
+                    episode = "S"+str(self._media_info.get("season"))
+                if self._media_info.get("episode"):
+                    episode += "E"+str(self._media_info.get("episode"))
+                titles.append(episode)
         if len(titles) > 0:
             return " - ".join(titles)
         return ""
@@ -376,10 +384,10 @@ class ZidooRC:
     def media_artist(self):
         """Artist of current playing media."""
         titles = []
-        if self._media_info.get("season_name"):
-            titles.append(self._media_info.get("season_name"))
         if self._media_info.get("episode_name"):
             titles.append(self._media_info.get("episode_name"))
+        if self._media_info.get("season_name"):
+            titles.append(self._media_info.get("season_name"))
         if self._media_info.get("artist"):
             titles.append(self._media_info.get("artist"))
         if len(titles) > 0:
@@ -524,7 +532,7 @@ class ZidooRC:
             return
 
         if state != self._last_state:
-            _LOGGER.debug("%s New state (%s)", self._device_config.name, state)
+            _LOGGER.debug("[%s] New state (%s)", self._host, state)
             self._last_state = state
             self._update_interval = (
                 SCAN_INTERVAL if state == States.OFF else SCAN_INTERVAL_RAPID
@@ -573,13 +581,14 @@ class ZidooRC:
         """
         # Don't do 2 connections at the same time, just wait the attempt to finish
         if self._connect_lock.locked():
-            _LOGGER.debug("connect already in process...")
+            _LOGGER.debug("[%s] Connect already in process...", self._host)
             await self._connect_lock.acquire()
             response = await self.get_system_info(log_errors=False)
             self._connect_lock.release()
             return response
 
         await self._connect_lock.acquire()
+        _LOGGER.debug("[%s] Connecting...", self._host)
         # /connect?uuid= requires authorization for each client
         # url = "ZidooControlCenter/connect?name={}&uuid={}&tag=0".format(client_name, client_uuid)
         # response = await self._req_json(url, log_errors=False)
@@ -589,13 +598,13 @@ class ZidooRC:
             response = await self.get_system_info(log_errors=False)
 
             if response and response.get("status") == 200:
-                _LOGGER.debug("connected: %s", response)
+                _LOGGER.debug("[%s] connected: %s", self._host, response)
                 self._power_status = True
                 await self._init_network()
                 return response
             await self.start_polling()
         except Exception as ex:
-            _LOGGER.error("Error during connection %s", ex)
+            _LOGGER.error("[%s] Error during connection %s", self._host, ex)
         finally:
             self._connect_lock.release()
 
@@ -611,7 +620,7 @@ class ZidooRC:
         """Start polling task."""
         if self._update_task is not None:
             return
-        _LOGGER.debug("Start polling task for device %s", self.id)
+        _LOGGER.debug("[%s] Start polling task for device %s", self._host, self.id)
         self._update_task = self._event_loop.create_task(self._background_update_task())
 
     async def stop_polling(self):
@@ -630,12 +639,12 @@ class ZidooRC:
                 if self.state == States.OFF:
                     self._reconnect_retry += 1
                     if self._reconnect_retry > CONNECTION_RETRIES:
-                        _LOGGER.debug("Stopping update task as the device %s is off", self.id)
+                        _LOGGER.debug("[%s] Stopping update task as the device %s is off", self._host,self.id)
                         break
-                    _LOGGER.debug("Device %s is off, retry %s", self.id, self._reconnect_retry)
+                    _LOGGER.debug("[%s] Device %s is off, retry %s", self._host, self.id, self._reconnect_retry)
                 elif self._reconnect_retry > 0:
                     self._reconnect_retry = 0
-                    _LOGGER.debug("Device %s is on again", self.id)
+                    _LOGGER.debug("[%s] Device %s is on again", self._host, self.id)
             await self.update()
             await asyncio.sleep(10)
 
@@ -791,15 +800,15 @@ class ZidooRC:
 
         except ClientError as err:
             if log_errors and self._power_status:
-                _LOGGER.info("[I] Client Error: %s", str(err))
+                _LOGGER.info("[%s] Client Error: %s", self._host, str(err))
 
         except ConnectionError as err:
             if log_errors and self._power_status:
-                _LOGGER.info("[I] Connect Error: %s", str(err))
+                _LOGGER.info("[%s] Connect Error: %s", self._host, str(err))
 
         except asyncio.exceptions.TimeoutError as err:
             if log_errors and self._power_status:
-                _LOGGER.warning("[W] Timeout Error: %s", str(err))
+                _LOGGER.warning("[%s] Timeout Error: %s", self._host, str(err))
 
         else:
             if response is not None or response.status == 200:
@@ -933,7 +942,7 @@ class ZidooRC:
 
             self._movie_info = movie_info
 
-        _LOGGER.debug("new media detected (%s): %s", str(movie_id), str(movie_info))
+        _LOGGER.debug("[%s] new media detected (%s): %s", self._host, str(movie_id), str(movie_info))
         return movie_id
 
     async def _get_music_playing_info(self) -> json:
@@ -1614,7 +1623,7 @@ class ZidooRC:
 
         upnp = f"upnp://{ZUPNP_SERVERNAME}/{VERSION}?type={media_type}&res={uri}"
         url = f"ZidooFileControl/v2/openFile?url={urllib.parse.quote(upnp, safe='')}"
-        _LOGGER.debug("Stream command %s", str(url))
+        _LOGGER.debug("[%s] Stream command %s", self._host, str(url))
 
         response = await self._req_json(url)
 
