@@ -366,7 +366,7 @@ class ZidooRC:
         if title is not None:
             if title != self._media_info.get("movie_name"):
                 titles.append(title)
-            if re.search("S[0-9]+E[0-9]+", title) or re.search("S[0-9]+$", title):
+            if re.search("S[0-9]+[-:. ]{0,1}E[0-9]+", title, re.RegexFlag.IGNORECASE) or re.search("S[0-9]+$", title):
                 has_episode = True
         if not has_episode:
             if self._media_info.get("season") or self._media_info.get("episode"):
