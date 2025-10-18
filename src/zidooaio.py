@@ -12,24 +12,26 @@ import json
 import logging
 import socket
 import struct
+import time
 import urllib.parse
-from asyncio import AbstractEventLoop, Lock, CancelledError
-from datetime import datetime, timedelta
+from asyncio import AbstractEventLoop, CancelledError, Lock, Task
+from datetime import datetime, timedelta, timezone
 from enum import IntEnum, StrEnum
 from functools import wraps
-from typing import TypeVar, ParamSpec, Callable, Concatenate, Awaitable, Any, Coroutine
+from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
 
 import ucapi
 from aiohttp import ClientError, ClientSession, CookieJar
 from config import DeviceInstance
 from pyee.asyncio import AsyncIOEventEmitter
-from ucapi.media_player import Attributes as MediaAttr, States
-from ucapi.media_player import MediaType
+from ucapi.media_player import Attributes as MediaAttr
+from ucapi.media_player import MediaType, States
 from yarl import URL
 
 SCAN_INTERVAL = timedelta(seconds=10)
 SCAN_INTERVAL_RAPID = timedelta(seconds=1)
 CONNECTION_RETRIES = 10
+CONNECT_LOCK_TIMEOUT = 20
 
 
 # pylint: disable = C0302
@@ -225,7 +227,7 @@ _P = ParamSpec("_P")
 
 
 def cmd_wrapper(
-        func: Callable[Concatenate[_ZidooDeviceT, _P], Awaitable[dict[str, Any] | None]],
+    func: Callable[Concatenate[_ZidooDeviceT, _P], Awaitable[dict[str, Any] | None]],
 ) -> Callable[Concatenate[_ZidooDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
     """Catch command exceptions."""
 
@@ -248,12 +250,12 @@ class ZidooRC:
     """Zidoo Media Player Remote Control."""
 
     def __init__(
-            self,
-            host: str,
-            device_config: DeviceInstance | None = None,
-            psk: str = None,
-            mac: str = None,
-            loop: AbstractEventLoop | None = None,
+        self,
+        host: str,
+        device_config: DeviceInstance | None = None,
+        psk: str = None,
+        mac: str = None,
+        loop: AbstractEventLoop | None = None,
     ) -> None:
         """Initialize the Zidoo class.
 
@@ -301,8 +303,11 @@ class ZidooRC:
         self._media_info = {}
         self._update_interval = SCAN_INTERVAL
         self._connect_lock = Lock()
-        self._update_task = None
+        self._connect_lock_time: float = 0
+        self._update_task: Task | None = None
         self._update_lock = Lock()
+        self._media_image_url = None
+        self._media_position_updated_at: datetime | None = None
 
     @property
     def state(self) -> States:
@@ -310,12 +315,13 @@ class ZidooRC:
         return self._state
 
     @property
-    def attributes(self) -> dict[str, any]:
+    def attributes(self) -> dict[str, Any]:
         """Return the device attributes."""
-        updated_data = {
+        updated_data: dict[str, Any] = {
             MediaAttr.STATE: self.state,
             MediaAttr.MEDIA_POSITION: self.media_position if self.media_position else 0,
-            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0
+            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0,
+            MediaAttr.MEDIA_POSITION_UPDATED_AT: self._media_position_updated_at if self._media_position_updated_at else 0
         }
         if self.media_type:
             updated_data[MediaAttr.MEDIA_TYPE] = self.media_type
@@ -349,7 +355,7 @@ class ZidooRC:
         return self._source_list
 
     @property
-    def media_title(self):
+    def media_title(self) -> str:
         """Title of current playing media."""
         titles = []
         title = self._media_info.get("movie_name")
@@ -361,16 +367,16 @@ class ZidooRC:
         if self._media_info.get("season") or self._media_info.get("episode"):
             episode = ""
             if self._media_info.get("season"):
-                episode = "S"+str(self._media_info.get("season"))
+                episode = "S" + str(self._media_info.get("season"))
             if self._media_info.get("episode"):
-                episode += "E"+str(self._media_info.get("episode"))
+                episode += "E" + str(self._media_info.get("episode"))
             titles.append(episode)
         if len(titles) > 0:
             return " - ".join(titles)
         return ""
 
     @property
-    def media_artist(self):
+    def media_artist(self) -> str:
         """Artist of current playing media."""
         titles = []
         if self._media_info.get("season_name"):
@@ -384,12 +390,12 @@ class ZidooRC:
         return ""
 
     @property
-    def media_album_name(self):
+    def media_album_name(self) -> str:
         """Album of current playing media."""
         return self._media_info.get("album")
 
     @property
-    def media_duration(self):
+    def media_duration(self) -> float:
         """Duration of current playing media in seconds."""
         duration = self._media_info.get("duration")
         if duration:
@@ -397,7 +403,7 @@ class ZidooRC:
         return None
 
     @property
-    def media_position(self):
+    def media_position(self) -> float:
         """Position of current playing media in seconds."""
         position = self._media_info.get("position")
         if position:
@@ -405,7 +411,7 @@ class ZidooRC:
         return None
 
     @property
-    def media_image_url(self):
+    def media_image_url(self) -> str:
         """Image url of current playing media."""
         return self.generate_current_image_url()
 
@@ -418,6 +424,10 @@ class ZidooRC:
         """Turn off media player."""
         if self._state != States.OFF:
             await self.turn_off()
+
+    def update_config(self, device_config: DeviceInstance):
+        """Update existing configuration."""
+        self._device_config = device_config
 
     @cmd_wrapper
     async def async_power_toggle(self) -> None:
@@ -454,8 +464,6 @@ class ZidooRC:
                 # Save some data to check change later
                 source = self._current_source
                 image_url = self.generate_current_image_url()
-                if image_url is None:
-                    image_url = ""
 
                 # Store current data to compare what's changed next
                 title = self.media_title
@@ -463,6 +471,7 @@ class ZidooRC:
                 album = self.media_album_name
                 duration = self.media_duration
                 position = self.media_position
+                self._media_position_updated_at = datetime.now(timezone.utc)
 
                 self._media_info = {}
                 playing_info = await self.get_playing_info()
@@ -499,16 +508,18 @@ class ZidooRC:
                 if artist != self.media_artist:
                     updated_data[MediaAttr.MEDIA_ARTIST] = self.media_artist
                 if duration != self.media_duration:
-                    updated_data[MediaAttr.MEDIA_DURATION] =  self.media_duration
+                    updated_data[MediaAttr.MEDIA_DURATION] = self.media_duration
                 if position != self.media_position:
                     updated_data[MediaAttr.MEDIA_POSITION] = self.media_position
+                    updated_data[MediaAttr.MEDIA_POSITION_UPDATED_AT] = self._media_position_updated_at
                 if source != self.source:
                     updated_data[MediaAttr.SOURCE] = self.source
-                new_image_url = self.generate_current_image_url()
-                if new_image_url is None:
-                    new_image_url = ""
-                if new_image_url != image_url:
-                    updated_data[MediaAttr.MEDIA_IMAGE_URL] = new_image_url
+
+                if image_url != self._media_image_url:
+                    if image_url is None:
+                        image_url = ""
+                    self._media_image_url = image_url
+                    updated_data[MediaAttr.MEDIA_IMAGE_URL] = self._media_image_url
             if media_type != self._media_type:
                 self._media_type = media_type
                 updated_data[MediaAttr.MEDIA_TYPE] = self._media_type
@@ -518,9 +529,7 @@ class ZidooRC:
         if state != self._last_state:
             _LOGGER.debug("%s New state (%s)", self._device_config.name, state)
             self._last_state = state
-            self._update_interval = (
-                SCAN_INTERVAL if state == States.OFF else SCAN_INTERVAL_RAPID
-            )
+            self._update_interval = SCAN_INTERVAL if state == States.OFF else SCAN_INTERVAL_RAPID
             updated_data[MediaAttr.STATE] = state
         self._state = state
         if updated_data:
@@ -528,13 +537,9 @@ class ZidooRC:
 
     def _jdata_build(self, method: str, params: dict = None) -> str:
         if params:
-            ret = json.dumps(
-                {"method": method, "params": [params], "id": 1, "version": "1.0"}
-            )
+            ret = json.dumps({"method": method, "params": [params], "id": 1, "version": "1.0"})
         else:
-            ret = json.dumps(
-                {"method": method, "params": [], "id": 1, "version": "1.0"}
-            )
+            ret = json.dumps({"method": method, "params": [], "id": 1, "version": "1.0"})
         return ret
 
     async def _init_network(self):
@@ -547,9 +552,7 @@ class ZidooRC:
             if data and data["count"] > 0:
                 for item in data["list"]:
                     url = urllib.parse.quote(item.get("url"), safe="")
-                    await self._req_json(
-                        f"ZidooFileControl/v2/getFiles?requestCount=100&startIndex=0&sort=0&url={url}"
-                    )
+                    await self._req_json(f"ZidooFileControl/v2/getFiles?requestCount=100&startIndex=0&sort=0&url={url}")
         # gets current song list (and appears to initialize network shared on old devices)
         await self.get_music_playlist()
         # print(f"SONG_LIST: {self._song_list}")
@@ -565,13 +568,21 @@ class ZidooRC:
         """
         # Don't do 2 connections at the same time, just wait the attempt to finish
         if self._connect_lock.locked():
-            _LOGGER.debug("connect already in process...")
-            await self._connect_lock.acquire()
-            response = await self.get_system_info(log_errors=False)
-            self._connect_lock.release()
-            return response
+            _LOGGER.debug("[%s] Connect already in progress", self._device_config.address)
+            if time.time() - self._connect_lock_time > CONNECT_LOCK_TIMEOUT:
+                _LOGGER.warning(
+                    "[%s] Connect is locked since a too long time, unlock it anyway", self._device_config.address
+                )
+                try:
+                    self._connect_lock.release()
+                except RuntimeError:
+                    pass
+            else:
+                return None
+
 
         await self._connect_lock.acquire()
+        self._connect_lock_time = time.time()
         # /connect?uuid= requires authorization for each client
         # url = "ZidooControlCenter/connect?name={}&uuid={}&tag=0".format(client_name, client_uuid)
         # response = await self._req_json(url, log_errors=False)
@@ -584,6 +595,7 @@ class ZidooRC:
                 _LOGGER.debug("connected: %s", response)
                 self._power_status = True
                 await self._init_network()
+                await self.start_polling()
                 return response
             await self.start_polling()
         except Exception as ex:
@@ -691,13 +703,13 @@ class ZidooRC:
         return False
 
     async def _req_json(
-            self,
-            url: str,
-            # pylint: disable = W0102
-            params: dict = {},
-            log_errors: bool = True,
-            timeout: int = TIMEOUT,
-            max_retries: int = RETRIES,
+        self,
+        url: str,
+        # pylint: disable = W0102
+        params: dict = {},
+        log_errors: bool = True,
+        timeout: int = TIMEOUT,
+        max_retries: int = RETRIES,
     ) -> json:
         """Async Send request command via HTTP json to player.
 
@@ -737,11 +749,11 @@ class ZidooRC:
             self._cookies = None
 
     async def _send_cmd(
-            self,
-            url: str,
-            params: dict = None,
-            log_errors: bool = True,
-            timeout: int = TIMEOUT,
+        self,
+        url: str,
+        params: dict = None,
+        log_errors: bool = True,
+        timeout: int = TIMEOUT,
     ):
         """Async Send request command via HTTP json to player.
 
@@ -759,9 +771,7 @@ class ZidooRC:
                 raw API response
         """
         if self._session is None:
-            self._session = ClientSession(
-                cookie_jar=CookieJar(unsafe=True, quote_cookie=False)
-            )
+            self._session = ClientSession(cookie_jar=CookieJar(unsafe=True, quote_cookie=False))
 
         headers = {}
         if self._psk is not None:
@@ -855,9 +865,7 @@ class ZidooRC:
     async def _get_video_playing_info(self) -> json:
         """Async Get information from built in video player."""
         return_value = {}
-        response = await self._req_json(
-            "ZidooVideoPlay/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO
-        )
+        response = await self._req_json("ZidooVideoPlay/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO)
 
         if response is not None and response.get("status") == 200:
             if response.get("subtitle"):
@@ -878,9 +886,9 @@ class ZidooRC:
                 return_value["audio"] = result.get("audioInfo")
                 return_value["video"] = result.get("output")
                 if (
-                        return_value["status"] is True
-                        and return_value["uri"]
-                        and return_value["uri"] != self._last_video_path
+                    return_value["status"] is True
+                    and return_value["uri"]
+                    and return_value["uri"] != self._last_video_path
                 ):
                     self._last_video_path = return_value["uri"]
                     self._video_id = await self._get_id_from_uri(self._last_video_path)
@@ -894,9 +902,7 @@ class ZidooRC:
         movie_id = 0
         movie_info = {}
 
-        response = await self._req_json(
-            f"ZidooPoster/v2/getAggregationOfFile?path={urllib.parse.quote(uri)}"
-        )
+        response = await self._req_json(f"ZidooPoster/v2/getAggregationOfFile?path={urllib.parse.quote(uri)}")
 
         if response:
             movie_info["type"] = response.get("type")
@@ -931,9 +937,7 @@ class ZidooRC:
     async def _get_music_playing_info(self) -> json:
         """Async Get information from built in Music Player."""
         return_value = {}
-        response = await self._req_json(
-            "ZidooMusicControl/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO
-        )
+        response = await self._req_json("ZidooMusicControl/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO)
 
         # pylint: disable = W1405
         if response is not None and response.get("status") == 200:
@@ -969,9 +973,7 @@ class ZidooRC:
         """Async Get information from built in Movie Player."""
         return_value = {}
 
-        response = await self._req_json(
-            "ZidooControlCenter/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO
-        )
+        response = await self._req_json("ZidooControlCenter/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO)
 
         if response is not None and response.get("status") == 200:
             if response.get("file"):
@@ -1012,9 +1014,7 @@ class ZidooRC:
             dictionary list
         """
         return_values = {}
-        response = await self._req_json(
-            "ZidooVideoPlay/getSubtitleList", log_errors=log_errors
-        )
+        response = await self._req_json("ZidooVideoPlay/getSubtitleList", log_errors=log_errors)
 
         if response is not None and response.get("status") == 200:
             for result in response["subtitles"]:
@@ -1033,13 +1033,9 @@ class ZidooRC:
             True if successful
         """
         if index is None:
-            index = self._next_data(
-                await self.get_subtitle_list(), self._current_subtitle
-            )
+            index = self._next_data(await self.get_subtitle_list(), self._current_subtitle)
 
-        response = await self._req_json(
-            f"ZidooVideoPlay/setSubtitle?index={index}", log_errors=False
-        )
+        response = await self._req_json(f"ZidooVideoPlay/setSubtitle?index={index}", log_errors=False)
 
         if response is not None and response.get("status") == 200:
             self._current_subtitle = index
@@ -1075,9 +1071,7 @@ class ZidooRC:
         if index is None:
             index = self._next_data(await self.get_audio_list(), self._current_audio)
 
-        response = await self._req_json(
-            f"ZidooVideoPlay/setAudio?index={index}", log_errors=False
-        )
+        response = await self._req_json(f"ZidooVideoPlay/setAudio?index={index}", log_errors=False)
 
         if response is not None and response.get("status") == 200:
             self._current_audio = index
@@ -1105,9 +1099,7 @@ class ZidooRC:
                 'ableRemoteBoot': network boot compatible (wol)
                 'pyapiversion': python api version
         """
-        response = await self._req_json(
-            "ZidooControlCenter/getModel", log_errors=log_errors, max_retries=0
-        )
+        response = await self._req_json("ZidooControlCenter/getModel", log_errors=log_errors, max_retries=0)
 
         if response and response.get("status") == 200:
             response["pyapiversion"] = VERSION
@@ -1154,9 +1146,7 @@ class ZidooRC:
         """
         return_values = {}
 
-        response = await self._req_json(
-            "ZidooControlCenter/Apps/getApps", log_errors=log_errors
-        )
+        response = await self._req_json("ZidooControlCenter/Apps/getApps", log_errors=log_errors)
 
         if response is not None and response.get("status") == 200:
             for result in response["apps"]:
@@ -1183,9 +1173,7 @@ class ZidooRC:
 
     async def _start_app(self, app_id) -> bool:
         """Async Start an app by package name."""
-        response = await self._req_json(
-            f"ZidooControlCenter/Apps/openApp?packageName={app_id}"
-        )
+        response = await self._req_json(f"ZidooControlCenter/Apps/openApp?packageName={app_id}")
 
         if response is not None and response.get("status") == 200:
             return True
@@ -1225,9 +1213,7 @@ class ZidooRC:
             filter_type = ZVIDEO_FILTER_TYPES.get(filter_type, None)
 
         # v2 http://{{host}}/Poster/v2/getAggregations?type=0&start=0&count=40
-        response = await self._req_json(
-            f"ZidooPoster/getVideoList?page=1&pagesize={max_count}&type={filter_type}"
-        )
+        response = await self._req_json(f"ZidooPoster/getVideoList?page=1&pagesize={max_count}&type={filter_type}")
 
         if response is not None and response.get("status") == 200:
             if filter_type in {10, 11}:
@@ -1303,9 +1289,7 @@ class ZidooRC:
                     return result["aggregationId"]
         return movie_id
 
-    async def get_music_list(
-            self, music_type: int = 0, music_id: int = None, max_count: int = DEFAULT_COUNT
-    ) -> json:
+    async def get_music_list(self, music_type: int = 0, music_id: int = None, max_count: int = DEFAULT_COUNT) -> json:
         """Async Return list of music.
 
         Parameters
@@ -1335,17 +1319,13 @@ class ZidooRC:
             json
                 raw API response if successful
         """
-        response = await self._req_json(
-            f"MusicControl/v2/getSingleMusics?start=0&count={max_count}"
-        )
+        response = await self._req_json(f"MusicControl/v2/getSingleMusics?start=0&count={max_count}")
         self._song_list = self._get_music_ids(response.get("array"))
 
         if response is not None:
             return response
 
-    async def _get_album_list(
-            self, album_id: int = None, max_count: int = DEFAULT_COUNT
-    ) -> json:
+    async def _get_album_list(self, album_id: int = None, max_count: int = DEFAULT_COUNT) -> json:
         """Async Return list of albums or album music.
 
         Parameters
@@ -1358,20 +1338,14 @@ class ZidooRC:
                 raw API response if successful
         """
         if album_id:
-            response = await self._req_json(
-                f"MusicControl/v2/getAlbumMusics?id={album_id}&start=0&count={max_count}"
-            )
+            response = await self._req_json(f"MusicControl/v2/getAlbumMusics?id={album_id}&start=0&count={max_count}")
         else:
-            response = await self._req_json(
-                f"MusicControl/v2/getAlbums?start=0&count={max_count}"
-            )
+            response = await self._req_json(f"MusicControl/v2/getAlbums?start=0&count={max_count}")
 
         if response is not None:
             return response
 
-    async def _get_artist_list(
-            self, artist_id: int = None, max_count: int = DEFAULT_COUNT
-    ) -> json:
+    async def _get_artist_list(self, artist_id: int = None, max_count: int = DEFAULT_COUNT) -> json:
         """Async Return list of artists or artist music.
 
         Parameters
@@ -1386,13 +1360,9 @@ class ZidooRC:
                 raw API response if successful
         """
         if artist_id:
-            response = await self._req_json(
-                f"MusicControl/v2/getArtistMusics?id={artist_id}&start=0&count={max_count}"
-            )
+            response = await self._req_json(f"MusicControl/v2/getArtistMusics?id={artist_id}&start=0&count={max_count}")
         else:
-            response = await self._req_json(
-                f"MusicControl/v2/getArtists?start=0&count={max_count}"
-            )
+            response = await self._req_json(f"MusicControl/v2/getArtists?start=0&count={max_count}")
 
         if response is not None:  # and response.get("status") == 200:
             return response
@@ -1411,9 +1381,7 @@ class ZidooRC:
         """
         if playlist_id:
             if playlist_id == "playing":
-                response = await self._req_json(
-                    f"MusicControl/v2/getPlayQueue?start=0&count={max_count}"
-                )
+                response = await self._req_json(f"MusicControl/v2/getPlayQueue?start=0&count={max_count}")
                 if response:
                     self._song_list = self._get_music_ids(response.get("array"))
             else:
@@ -1429,9 +1397,7 @@ class ZidooRC:
         if response is not None:
             return response
 
-    async def search_movies(
-            self, search_type: int | str = 0, max_count: int = DEFAULT_COUNT
-    ) -> json:
+    async def search_movies(self, search_type: int | str = 0, max_count: int = DEFAULT_COUNT) -> json:
         """Async Return list of video based on query.
 
         Parameters
@@ -1456,11 +1422,11 @@ class ZidooRC:
             return response
 
     async def search_music(
-            self,
-            query: str,
-            search_type: int | str = 0,
-            max_count: int = DEFAULT_COUNT,
-            play: bool = False,
+        self,
+        query: str,
+        search_type: int | str = 0,
+        max_count: int = DEFAULT_COUNT,
+        play: bool = False,
     ) -> json:
         """Async Return list of music based on query.
 
@@ -1629,9 +1595,7 @@ class ZidooRC:
         # print("Video id : {}".format(video_id))
 
         # v2 http://{}/VideoPlay/playVideo?index=0
-        response = await self._req_json(
-            f"ZidooPoster/PlayVideo?id={movie_id}&type={video_type}"
-        )
+        response = await self._req_json(f"ZidooPoster/PlayVideo?id={movie_id}&type={video_type}")
 
         if response and response.get("status") == 200:
             return True
@@ -1647,9 +1611,7 @@ class ZidooRC:
                     ids.append(str(_id))
         return ids
 
-    async def play_music(
-            self, media_id: int = None, media_type: int = "music", music_id: int = None
-    ) -> bool:
+    async def play_music(self, media_id: int = None, media_type: int = "music", music_id: int = None) -> bool:
         """Async Play video content by id.
 
         Parameters
@@ -1702,9 +1664,7 @@ class ZidooRC:
         Returns
             raw api response if successful
         """
-        response = await self._req_json(
-            f"MusicControl/v2/getPlayQueue?start=0&count={max_count}"
-        )
+        response = await self._req_json(f"MusicControl/v2/getPlayQueue?start=0&count={max_count}")
 
         if response is not None:
             return response
@@ -1726,9 +1686,7 @@ class ZidooRC:
                     'length': length in ms
                     'modifyDate': linux date code
         """
-        response = await self._req_json(
-            f"ZidooFileControl/getFileList?path={uri}&type={file_type}"
-        )
+        response = await self._req_json(f"ZidooFileControl/getFileList?path={uri}&type={file_type}")
 
         if response is not None and response.get("status") == 200:
             return response
@@ -1748,9 +1706,7 @@ class ZidooRC:
                     'length': length in ms
                     'modifyDate': linux date code
         """
-        response = await self._req_json(
-            f"ZidooFileControl/getHost?path={uri}&type={host_type}"
-        )
+        response = await self._req_json(f"ZidooFileControl/getHost?path={uri}&type={host_type}")
         _LOGGER.debug("zidoo host list: %s", str(response))
 
         return_value = {}
@@ -1768,9 +1724,7 @@ class ZidooRC:
         return_value["filelist"] = share_list
         return return_value
 
-    def generate_image_url(
-            self, media_id: int, media_type: int, width: int = 400, height: int = None
-    ) -> str:
+    def generate_image_url(self, media_id: int, media_type: int, width: int = 400, height: int = None) -> str:
         """Get link to thumbnail."""
         if media_type in ZVIDEO_SEARCH_TYPES:
             if height is None:
@@ -1779,14 +1733,10 @@ class ZidooRC:
         if media_type in ZMUSIC_SEARCH_TYPES:
             if height is None:
                 height = width
-            return self._generate_music_image_url(
-                media_id, ZMUSIC_SEARCH_TYPES[media_type], width, height
-            )
+            return self._generate_music_image_url(media_id, ZMUSIC_SEARCH_TYPES[media_type], width, height)
         return None
 
-    def _generate_movie_image_url(
-            self, movie_id: int, width: int = 400, height: int = 600
-    ) -> str:
+    def _generate_movie_image_url(self, movie_id: int, width: int = 400, height: int = 600) -> str:
         """Get link to thumbnail.
 
         Parameters
@@ -1805,9 +1755,7 @@ class ZidooRC:
         return url
 
     # pylint: disable = W0613
-    def _generate_music_image_url(
-            self, music_id: int, music_type: int = 0, width: int = 200, height: int = 200
-    ) -> str:
+    def _generate_music_image_url(self, music_id: int, music_type: int = 0, width: int = 200, height: int = 200) -> str:
         """Get link to thumbnail.
 
         Parameters
@@ -1866,9 +1814,7 @@ class ZidooRC:
     @cmd_wrapper
     async def turn_off(self, standby=False):
         """Async Turn off media player."""
-        return await self.send_key(
-            ZKEYS.ZKEY_POWER_STANDBY if standby else ZKEYS.ZKEY_POWER_OFF
-        )
+        return await self.send_key(ZKEYS.ZKEY_POWER_STANDBY if standby else ZKEYS.ZKEY_POWER_OFF)
 
     @cmd_wrapper
     async def volume_up(self):
@@ -1950,18 +1896,14 @@ class ZidooRC:
 
     async def _set_movie_position(self, position):
         """Async Set current position for video player."""
-        response = await self._req_json(
-            f"ZidooVideoPlay/seekTo?positon={int(position)}"
-        )
+        response = await self._req_json(f"ZidooVideoPlay/seekTo?positon={int(position)}")
 
         if response is not None and response.get("status") == 200:
             return response
 
     async def _set_audio_position(self, position):
         """Async Set current position for music player."""
-        response = await self._req_json(
-            f"ZidooMusicControl/seekTo?time={int(position)}"
-        )
+        response = await self._req_json(f"ZidooMusicControl/seekTo?time={int(position)}")
 
         if response is not None and response.get("status") == 200:
             return response

@@ -104,9 +104,7 @@ class ZidooMediaPlayer(MediaPlayer):
             options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS},
         )
 
-    async def command(
-        self, cmd_id: str, params: dict[str, Any] | None = None
-    ) -> StatusCodes:
+    async def command(self, cmd_id: str, params: dict[str, Any] | None = None) -> StatusCodes:
         """
         Media-player entity command handler.
 
@@ -265,4 +263,3 @@ class ZidooMediaPlayer(MediaPlayer):
             attributes[key] = value
 
         return attributes
-

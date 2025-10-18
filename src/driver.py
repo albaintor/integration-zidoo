@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from typing import Any
 
 import config
@@ -26,7 +27,10 @@ from ucapi.media_player import States
 from zidooaio import ZidooRC
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
-_LOOP = asyncio.get_event_loop()
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+_LOOP = asyncio.new_event_loop()
+asyncio.set_event_loop(_LOOP)
 
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
@@ -104,9 +108,7 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
             device = _configured_devices[device_id]
             attributes = device.attributes
             _LOG.debug("Subscribe entity %s, attributes : %s", entity_id, attributes)
-            api.configured_entities.update_attributes(
-                entity_id, attributes
-            )
+            api.configured_entities.update_attributes(entity_id, attributes)
             continue
 
         device = config.devices.get(device_id)
@@ -162,9 +164,7 @@ async def on_device_connected(device_id: str):
                 # TODO why STANDBY?
                 api.configured_entities.update_attributes(
                     entity_id,
-                    {
-                        ucapi.media_player.Attributes.STATE: ucapi.media_player.States.STANDBY
-                    },
+                    {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.STANDBY},
                 )
 
 
@@ -180,9 +180,7 @@ async def on_device_disconnected(avr_id: str):
         if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             api.configured_entities.update_attributes(
                 entity_id,
-                {
-                    ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE
-                },
+                {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE},
             )
 
     # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
@@ -201,9 +199,7 @@ async def on_avr_connection_error(avr_id: str, message):
         if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             api.configured_entities.update_attributes(
                 entity_id,
-                {
-                    ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE
-                },
+                {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE},
             )
 
     # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
@@ -277,9 +273,7 @@ def _entities_from_avr(avr_id: str) -> list[str]:
     return [f"media_player.{avr_id}"]
 
 
-def _configure_new_device(
-    device_config: config.DeviceInstance, connect: bool = True
-) -> None:
+def _configure_new_device(device_config: config.DeviceInstance, connect: bool = True) -> None:
     """
     Create and configure a new device.
 
@@ -290,7 +284,10 @@ def _configure_new_device(
     """
     # the device should not yet be configured, but better be safe
     if device_config.id in _configured_devices:
+        _LOG.debug("Existing config device updated, update the running device %s", device_config)
         device = _configured_devices[device_config.id]
+        asyncio.create_task(device.disconnect())
+        device.update_config(device_config)
     else:
         device = ZidooRC(device_config.address, device_config=device_config)
         # device.events.on(zidooaio.Events.CONNECTED, on_device_connected)
@@ -306,9 +303,7 @@ def _configure_new_device(
     _register_available_entities(device_config, device)
 
 
-def _register_available_entities(
-    config_device: config.DeviceInstance, device: ZidooRC
-) -> None:
+def _register_available_entities(config_device: config.DeviceInstance, device: ZidooRC) -> None:
     """
     Create entities for given receiver device and register them as available entities.
 
@@ -329,12 +324,16 @@ def on_device_added(device: config.DeviceInstance) -> None:
     _configure_new_device(device, connect=False)
 
 
+def on_device_updated(device: config.DeviceInstance) -> None:
+    """Handle an updated device in the configuration."""
+    _LOG.debug("Device config updated: %s, reconnect with new configuration", device)
+    _configure_new_device(device, connect=True)
+
+
 def on_device_removed(device: config.DeviceInstance | None) -> None:
     """Handle a removed device in the configuration."""
     if device is None:
-        _LOG.debug(
-            "Configuration cleared, disconnecting & removing all configured AVR instances"
-        )
+        _LOG.debug("Configuration cleared, disconnecting & removing all configured AVR instances")
         for configured in _configured_devices.values():
             _LOOP.create_task(_async_remove(configured))
         _configured_devices.clear()
@@ -361,16 +360,13 @@ async def main():
     logging.basicConfig()
 
     level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
-    logging.getLogger("avr").setLevel(level)
+    logging.getLogger("zidooaio").setLevel(level)
     logging.getLogger("discover").setLevel(level)
     logging.getLogger("driver").setLevel(level)
     logging.getLogger("media_player").setLevel(level)
-    logging.getLogger("receiver").setLevel(level)
     logging.getLogger("setup_flow").setLevel(level)
 
-    config.devices = config.Devices(
-        api.config_dir_path, on_device_added, on_device_removed
-    )
+    config.devices = config.Devices(api.config_dir_path, on_device_added, on_device_removed, on_device_updated)
     for device in config.devices.all():
         _LOG.debug("UC Zidoo device %s %s", device.id, device.address)
         _configure_new_device(device, connect=False)
