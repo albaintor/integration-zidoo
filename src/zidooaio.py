@@ -320,9 +320,10 @@ class ZidooRC:
         updated_data: dict[str, Any] = {
             MediaAttr.STATE: self.state,
             MediaAttr.MEDIA_POSITION: self.media_position if self.media_position else 0,
-            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0,
-            MediaAttr.MEDIA_POSITION_UPDATED_AT: self._media_position_updated_at if self._media_position_updated_at else 0
+            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0
         }
+        if self.media_position_updated_at:
+            updated_data[MediaAttr.MEDIA_POSITION_UPDATED_AT] = self.media_position_updated_at
         if self.media_type:
             updated_data[MediaAttr.MEDIA_TYPE] = self.media_type
         if self.media_artist:
@@ -408,6 +409,13 @@ class ZidooRC:
         position = self._media_info.get("position")
         if position:
             return float(position) / 1000
+        return None
+
+    @property
+    def media_position_updated_at(self) -> str | None:
+        """Return timestamp of urrent media position."""
+        if self._media_position_updated_at:
+            return self._media_position_updated_at.isoformat()
         return None
 
     @property
@@ -511,7 +519,7 @@ class ZidooRC:
                     updated_data[MediaAttr.MEDIA_DURATION] = self.media_duration
                 if position != self.media_position:
                     updated_data[MediaAttr.MEDIA_POSITION] = self.media_position
-                    updated_data[MediaAttr.MEDIA_POSITION_UPDATED_AT] = self._media_position_updated_at
+                    updated_data[MediaAttr.MEDIA_POSITION_UPDATED_AT] = self.media_position_updated_at
                 if source != self.source:
                     updated_data[MediaAttr.SOURCE] = self.source
 
