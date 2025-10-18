@@ -13,13 +13,13 @@ on:
 
 env:
   INTG_NAME: zidoo
-  HASH_FILENAME: uc-intg-zidoo.hash
+  HASH_FILENAME: uc-src.hash
   # Python version to use in the builder image. See https://hub.docker.com/r/unfoldedcircle/r2-pyinstaller for possible versions.
   PYTHON_VER: 3.11.6-0.2.0
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -90,7 +90,7 @@ jobs:
   release:
     name: Create Release
     if: github.ref == 'refs/heads/main' || contains(github.ref, 'tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [build]
 
     steps:

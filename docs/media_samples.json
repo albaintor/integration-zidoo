@@ -1,0 +1,42 @@
+[
+  {
+    "status": true,
+    "title": "Au revoir à jamais",
+    "uri": "/data/system/smb/192.168.1.10#Videos/Action/Au revoir à jamais.mkv",
+    "duration": 7233000,
+    "position": 1210507,
+    "width": 1920,
+    "height": 1080,
+    "fps": 23.97599983215332,
+    "bitrate": "26,8 Mb/s",
+    "audio": "French DTS 5.1 channel 48,0KHz (1/2)",
+    "video": "3840x2160P @ 60Hz  YUV420  10 Bits  ITU 709  ",
+    "zoom": "Ajustement",
+    "source": "video",
+    "type": "movie",
+    "movie_name": "Au Revoir à Jamais",
+    "tag": "Elle avait perdu la mémoire. Il n'aurait jamais dû l'aider à la retrouver.",
+    "date": datetime.datetime(1996, 10, 11, 0, 0)
+  },
+  {
+    "status": true,
+    "title": "Chuck S01E06",
+    "uri": "/data/system/smb/192.168.1.10#Series/Chuck/Chuck S01E06.mkv",
+    "duration": 2596000,
+    "position": 7130,
+    "width": 1920,
+    "height": 1080,
+    "fps": 23.97599983215332,
+    "bitrate": "",
+    "audio": "French Dolby Digital 2.0 channel 48,0KHz (1/2)",
+    "video": "3840x2160P @ 60Hz  YUV420  10 Bits  ITU 709  ",
+    "zoom": "Ajustement",
+    "source": "video",
+    "type": "tv",
+    "episode": 6,
+    "episode_name": "Un ver de trop",
+    "season": 1,
+    "season_name": "Saison 1",
+    "series_name": "Chuck"
+}
+]

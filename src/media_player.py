@@ -57,6 +57,8 @@ class ZidooMediaPlayer(MediaPlayer):
             Features.SELECT_SOURCE,
             Features.HOME,
             Features.MEDIA_TITLE,
+            Features.MEDIA_ARTIST,
+            Features.MEDIA_ALBUM,
             Features.MEDIA_IMAGE_URL,
             Features.MEDIA_TYPE,
             Features.PLAY_PAUSE,
@@ -85,9 +87,11 @@ class ZidooMediaPlayer(MediaPlayer):
             Attributes.SOURCE_LIST: [],
             Attributes.MEDIA_IMAGE_URL: "",
             Attributes.MEDIA_TITLE: "",
+            Attributes.MEDIA_ALBUM: "",
+            Attributes.MEDIA_ARTIST: "",
             Attributes.MEDIA_POSITION: 0,
             Attributes.MEDIA_DURATION: 0,
-            Attributes.MEDIA_TYPE: MediaType.VIDEO,
+            Attributes.MEDIA_TYPE: MediaType.VIDEO
         }
         # # use sound mode support & name from configuration: receiver might not yet be connected
         # if device.support_sound_mode:
@@ -235,6 +239,7 @@ class ZidooMediaPlayer(MediaPlayer):
             Attributes.MEDIA_TYPE,
             Attributes.MEDIA_ALBUM,
             Attributes.MEDIA_ARTIST,
+            "media_position_updated_at"
         ]:
             if attr in update:
                 attributes = self._key_update_helper(attr, update[attr], attributes)
@@ -249,6 +254,7 @@ class ZidooMediaPlayer(MediaPlayer):
                 attributes[Attributes.MEDIA_ARTIST] = ""
                 attributes[Attributes.MEDIA_POSITION] = 0
                 attributes[Attributes.MEDIA_DURATION] = 0
+                attributes["media_position_updated_at"] = ""
 
         return attributes
 
