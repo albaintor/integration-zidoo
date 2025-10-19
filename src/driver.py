@@ -33,7 +33,7 @@ asyncio.set_event_loop(_LOOP)
 api = ucapi.IntegrationAPI(_LOOP)
 # Map of device_id -> Zidoo instance
 _configured_devices: dict[str, ZidooRC] = {}
-_R2_IN_STANDBY = False
+_REMOTE_IN_STANDBY = False
 
 
 @api.listens_to(ucapi.Events.CONNECT)
@@ -63,8 +63,8 @@ async def on_r2_enter_standby() -> None:
 
     Disconnect every ZidooTV instances.
     """
-    global _R2_IN_STANDBY
-    _R2_IN_STANDBY = True
+    global _REMOTE_IN_STANDBY
+    _REMOTE_IN_STANDBY = True
     _LOG.debug("Enter standby event: disconnecting device(s)")
     # for device in _configured_devices.values():
     #     # start background task
@@ -78,9 +78,9 @@ async def on_r2_exit_standby() -> None:
 
     Connect all ZidooTV instances.
     """
-    global _R2_IN_STANDBY
+    global _REMOTE_IN_STANDBY
 
-    _R2_IN_STANDBY = False
+    _REMOTE_IN_STANDBY = False
     _LOG.debug("Exit standby event: connecting device(s)")
 
     for device in _configured_devices.values():
@@ -95,9 +95,9 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
 
     :param entity_ids: entity identifiers.
     """
-    global _R2_IN_STANDBY
+    global _REMOTE_IN_STANDBY
 
-    _R2_IN_STANDBY = False
+    _REMOTE_IN_STANDBY = False
     _LOG.debug("Subscribe entities event: %s", entity_ids)
     for entity_id in entity_ids:
         device_id = device_from_entity_id(entity_id)

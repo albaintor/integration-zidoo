@@ -348,7 +348,7 @@ async def handle_configuration_mode(
                         "label": {
                             "en": "Keep connection alive (faster initialization, but consumes more battery)",
                             "fr": "Conserver la connexion active (lancement plus rapide, mais consomme plus de "
-                                  "batterie)",
+                            "batterie)",
                         },
                         "field": {"checkbox": {"value": _reconfigured_device.always_on}},
                     },
@@ -514,7 +514,7 @@ async def _handle_backup_restore_step() -> RequestUserInput:
         {
             "en": "Backup or restore devices configuration (all existing devices will be removed)",
             "fr": "Sauvegarder ou restaurer la configuration des appareils (tous les appareils existants seront "
-                  "supprimés)",
+            "supprimés)",
         },
         [
             {
