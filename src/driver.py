@@ -29,6 +29,7 @@ if sys.platform == "win32":
 _LOOP = asyncio.new_event_loop()
 asyncio.set_event_loop(_LOOP)
 
+# pylint: disable=C0103
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
 # Map of device_id -> Zidoo instance
