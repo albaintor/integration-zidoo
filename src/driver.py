@@ -7,23 +7,20 @@ This module implements a Remote Two integration driver for Zidoo STB.
 """
 
 import asyncio
-import json
 import logging
 import os
 import sys
 from typing import Any
 
+import ucapi
+from ucapi.media_player import Attributes as MediaAttr
+from ucapi.media_player import States
+
 import config
 import media_player
 import setup_flow
-import ucapi
-import ucapi.api_definitions as uc
-import websockets
 import zidooaio
 from config import device_from_entity_id
-from ucapi.api import IntegrationAPI, filter_log_msg_data
-from ucapi.media_player import Attributes as MediaAttr
-from ucapi.media_player import States
 from zidooaio import ZidooRC
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
@@ -289,7 +286,7 @@ def _configure_new_device(device_config: config.DeviceInstance, connect: bool = 
         asyncio.create_task(device.disconnect())
         device.update_config(device_config)
     else:
-        device = ZidooRC(device_config.address, device_config=device_config)
+        device = ZidooRC(device_config)
         # device.events.on(zidooaio.Events.CONNECTED, on_device_connected)
         device.events.on(zidooaio.Events.ERROR, on_avr_connection_error)
         device.events.on(zidooaio.Events.UPDATE, on_avr_update)

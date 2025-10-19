@@ -18,8 +18,8 @@ from typing import Any
 from rich import print_json
 
 import zidooaio
-from zidooaio import ZidooRC
 from config import DeviceInstance
+from zidooaio import ZidooRC
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -27,7 +27,8 @@ _LOOP = asyncio.new_event_loop()
 asyncio.set_event_loop(_LOOP)
 
 address = "192.168.1.23"
-client: ZidooRC|None = None
+client: ZidooRC | None = None
+
 
 async def on_device_update(device_id: str, update: dict[str, Any] | None) -> None:
     print_json(data=update)
@@ -38,8 +39,10 @@ async def cleaning():
         await client.disconnect()
     exit(0)
 
+
 def signal_handler(sig, frame):
     asyncio.create_task(cleaning())
+
 
 async def main():
     global client
@@ -52,7 +55,7 @@ async def main():
             id="zidoo",
             name="Zidoo",
             address=address,
-        )
+        ),
     )
     # await client.power_on()
     client.events.on(zidooaio.Events.UPDATE, on_device_update)
@@ -67,8 +70,13 @@ async def main():
     if properties["date"] and isinstance(properties["date"], datetime):
         properties["date"] = str(properties["date"])
     print_json(data=properties)
-    properties = {"title" : client.media_title, "artist": client.media_artist, "album": client.media_album_name, "media image": client.media_image_url,
-                  "status": client.state}
+    properties = {
+        "title": client.media_title,
+        "artist": client.media_artist,
+        "album": client.media_album_name,
+        "media image": client.media_image_url,
+        "status": client.state,
+    }
     print("Media info :")
     print_json(data=properties)
     # _LOOP.create_task(client.update())

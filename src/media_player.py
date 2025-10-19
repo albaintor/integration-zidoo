@@ -8,8 +8,6 @@ Media-player entity functions.
 import logging
 from typing import Any
 
-import zidooaio
-from config import DeviceInstance, create_entity_id
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
 from ucapi.media_player import (
     Attributes,
@@ -20,6 +18,8 @@ from ucapi.media_player import (
     Options,
     States,
 )
+
+from config import DeviceInstance, create_entity_id
 from zidooaio import ZKEYS, ZidooRC
 
 _LOG = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ class ZidooMediaPlayer(MediaPlayer):
             Attributes.MEDIA_ARTIST: "",
             Attributes.MEDIA_POSITION: 0,
             Attributes.MEDIA_DURATION: 0,
-            Attributes.MEDIA_TYPE: MediaType.VIDEO
+            Attributes.MEDIA_TYPE: MediaType.VIDEO,
         }
         # # use sound mode support & name from configuration: receiver might not yet be connected
         # if device.support_sound_mode:
@@ -239,7 +239,7 @@ class ZidooMediaPlayer(MediaPlayer):
             Attributes.MEDIA_TYPE,
             Attributes.MEDIA_ALBUM,
             Attributes.MEDIA_ARTIST,
-            "media_position_updated_at"
+            "media_position_updated_at",
         ]:
             if attr in update:
                 attributes = self._key_update_helper(attr, update[attr], attributes)

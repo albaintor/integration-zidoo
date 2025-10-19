@@ -16,17 +16,36 @@ import time
 import urllib.parse
 from asyncio import AbstractEventLoop, CancelledError, Lock, Task
 from datetime import datetime, timedelta, timezone
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 from functools import wraps
 from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
 
 import ucapi
-from aiohttp import ClientError, ClientSession, CookieJar
-from config import DeviceInstance
+from aiohttp import ClientError, ClientResponse, ClientSession, CookieJar
 from pyee.asyncio import AsyncIOEventEmitter
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import MediaType, States
 from yarl import URL
+
+from config import DeviceInstance
+from const import (
+    ZCMD_STATUS,
+    ZCONTENT_MUSIC,
+    ZCONTENT_NONE,
+    ZCONTENT_VIDEO,
+    ZKEYS,
+    ZMEDIA_TYPE_ALBUM,
+    ZMEDIA_TYPE_ARTIST,
+    ZMEDIA_TYPE_PLAYLIST,
+    ZMUSIC_IMAGETARGET,
+    ZMUSIC_IMAGETYPE,
+    ZMUSIC_PLAYLISTTYPE,
+    ZMUSIC_SEARCH_TYPES,
+    ZTYPE_MIMETYPE,
+    ZUPNP_SERVERNAME,
+    ZVIDEO_FILTER_TYPES,
+    ZVIDEO_SEARCH_TYPES,
+)
 
 SCAN_INTERVAL = timedelta(seconds=10)
 SCAN_INTERVAL_RAPID = timedelta(seconds=1)
@@ -56,171 +75,7 @@ TIMEOUT_SEARCH = 10  # for searches
 RETRIES = 3  # default retries
 CONF_PORT = 9529  # default api port
 DEFAULT_COUNT = 250  # default list limit
-ZCMD_STATUS = "getPlayStatus"
 
-
-class ZKEYS(StrEnum):
-    """List of available keys."""
-
-    ZKEY_BACK = "Key.Back"
-    ZKEY_CANCEL = "Key.Cancel"
-    ZKEY_HOME = "Key.Home"
-    ZKEY_UP = "Key.Up"
-    ZKEY_DOWN = "Key.Down"
-    ZKEY_LEFT = "Key.Left"
-    ZKEY_RIGHT = "Key.Right"
-    ZKEY_OK = "Key.Ok"
-    ZKEY_SELECT = "Key.Select"
-    ZKEY_STAR = "Key.Star"
-    ZKEY_POUND = "Key.Pound"
-    ZKEY_DASH = "Key.Dash"
-    ZKEY_MENU = "Key.Menu"
-    ZKEY_MEDIA_PLAY = "Key.MediaPlay"
-    ZKEY_MEDIA_STOP = "Key.MediaStop"
-    ZKEY_MEDIA_PAUSE = "Key.MediaPause"
-    ZKEY_MEDIA_NEXT = "Key.MediaNext"
-    ZKEY_MEDIA_PREVIOUS = "Key.MediaPrev"
-    ZKEY_NUM_0 = "Key.Number_0"
-    ZKEY_NUM_1 = "Key.Number_1"
-    ZKEY_NUM_2 = "Key.Number_2"
-    ZKEY_NUM_3 = "Key.Number_3"
-    ZKEY_NUM_4 = "Key.Number_4"
-    ZKEY_NUM_5 = "Key.Number_5"
-    ZKEY_NUM_6 = "Key.Number_6"
-    ZKEY_NUM_7 = "Key.Number_7"
-    ZKEY_NUM_8 = "Key.Number_8"
-    ZKEY_NUM_9 = "Key.Number_9"
-    ZKEY_USER_A = "Key.UserDefine_A"
-    ZKEY_USER_B = "Key.UserDefine_B"
-    ZKEY_USER_C = "Key.UserDefine_C"
-    ZKEY_USER_D = "Key.UserDefine_D"
-    ZKEY_MUTE = "Key.Mute"
-    ZKEY_VOLUME_UP = "Key.VolumeUp"
-    ZKEY_VOLUME_DOWN = "Key.VolumeDown"
-    ZKEY_POWER_ON = "Key.PowerOn"
-    ZKEY_MEDIA_BACKWARDS = "Key.MediaBackward"
-    ZKEY_MEDIA_FORWARDS = "Key.MediaForward"
-    ZKEY_INFO = "Key.Info"
-    ZKEY_RECORD = "Key.Record"
-    ZKEY_PAGE_UP = "Key.PageUP"
-    ZKEY_PAGE_DOWN = "Key.PageDown"
-    ZKEY_SUBTITLE = "Key.Subtitle"
-    ZKEY_AUDIO = "Key.Audio"
-    ZKEY_REPEAT = "Key.Repeat"
-    ZKEY_MOUSE = "Key.Mouse"
-    ZKEY_POPUP_MENU = "Key.PopMenu"
-    ZKEY_APP_MOVIE = "Key.movie"
-    ZKEY_APP_MUSIC = "Key.music"
-    ZKEY_APP_PHOTO = "Key.photo"
-    ZKEY_APP_FILE = "Key.file"
-    ZKEY_LIGHT = "Key.light"
-    ZKEY_RESOLUTION = "Key.Resolution"
-    ZKEY_POWER_REBOOT = "Key.PowerOn.Reboot"
-    ZKEY_POWER_OFF = "Key.PowerOn.Poweroff"
-    ZKEY_POWER_STANDBY = "Key.PowerOn.Standby"
-    ZKEY_PICTURE_IN_PICTURE = "Key.Pip"
-    ZKEY_SCREENSHOT = "Key.Screenshot"
-    ZKEY_APP_SWITCH = "Key.APP.Switch"
-
-
-# Movie Player entry types
-ZTYPE_VIDEO = 0
-ZTYPE_MOVIE = 1
-ZTYPE_COLLECTION = 2
-ZTYPE_TV_SHOW = 3
-ZTYPE_TV_SEASON = 4
-ZTYPE_TV_EPISODE = 5
-ZTYPE_OTHER = 6
-ZTYPE_NAMES = {
-    ZTYPE_VIDEO: "video",
-    ZTYPE_MOVIE: "movie",
-    ZTYPE_COLLECTION: "collection",
-    ZTYPE_TV_SHOW: "tvshow",
-    ZTYPE_TV_SEASON: "tvseason",
-    ZTYPE_TV_EPISODE: "tvepisode",
-    ZTYPE_OTHER: "other",
-}
-
-ZCONTENT_VIDEO = "Video Player"
-ZCONTENT_MUSIC = "Music Player"
-ZCONTENT_NONE = None
-
-"""Movie Player search keys"""
-ZVIDEO_FILTER_TYPES = {
-    "all": 0,
-    "favorite": 1,
-    "watching": 2,
-    "movie": 3,
-    "tvshow": 4,
-    "sd": 5,
-    "bluray": 6,
-    "4k": 7,
-    "3d": 8,
-    "children": 9,
-    "recent": 10,
-    "unwatched": 11,
-    "other": 12,
-    # ?"dolby": 13
-}
-
-ZVIDEO_SEARCH_TYPES = {
-    # "all": -1,    # combined results
-    "video": 0,  # all movies tvshows and collections
-    "movie": 1,
-    "tvshow": 2,
-    "collection": 3,
-}
-
-ZMUSIC_SEARCH_TYPES = {"music": 0, "album": 1, "artist": 2, "playlist": 3}
-
-"""File System devicce type names"""
-ZDEVICE_FOLDER = 1000
-ZDEVICE_NAMES = {
-    1000: "hhd",
-    1001: "usb",
-    1002: "usb",
-    1003: "tf",
-    1004: "nfs",
-    1005: "smb",
-}
-
-ZFILETYPE_NAMES = {
-    0: "folder",
-    1: "music",
-    2: "movie",
-    3: "Image",
-    4: "txt",
-    5: "apk",
-    6: "pdf",
-    7: "doc",
-    8: "xls",
-    9: "ppt",
-    10: "web",
-    11: "zip",
-    # default: "other",
-}
-
-ZTYPE_MIMETYPE = {
-    "image": 3,
-    "video": 2,
-    "audio": 2,  # 1 is Music Player but upnp needs dms server
-    "other": 0,
-    "default": 4,
-    "application": 4,
-}
-ZUPNP_SERVERNAME = "zidoo-rc"
-
-ZMEDIA_TYPE_ARTIST = "artist"
-ZMEDIA_TYPE_ALBUM = "album"
-ZMEDIA_TYPE_PLAYLIST = "playlist"
-
-ZMUSIC_IMAGETYPE = {0: 0, 1: 1, 2: 0, 3: 0, 4: 1}
-ZMUSIC_IMAGETARGET = {0: 16, 1: 16, 2: 32, 3: 16, 4: 32}
-ZMUSIC_PLAYLISTTYPE = {
-    ZMEDIA_TYPE_ARTIST: 3,
-    ZMEDIA_TYPE_ALBUM: 4,
-    ZMEDIA_TYPE_PLAYLIST: 5,
-}
 
 _ZidooDeviceT = TypeVar("_ZidooDeviceT", bound="ZidooRC")
 _P = ParamSpec("_P")
@@ -251,7 +106,6 @@ class ZidooRC:
 
     def __init__(
         self,
-        host: str,
         device_config: DeviceInstance | None = None,
         psk: str = None,
         mac: str = None,
@@ -268,20 +122,13 @@ class ZidooRC:
                 authorization password key.  If not assigned, standard basic auth is used.
         """
         self._device_config = device_config
+        self.id = self._device_config.id
         self._mac = mac
-        self._wifi_mac = None
-        self._ethernet_mac = None
-        if device_config:
-            self.id = device_config.id
-            self._ethernet_mac = device_config.net_mac_address
-            self._wifi_mac = device_config.wifi_mac_address
-        else:
-            self.id = host
         self._event_loop = loop or asyncio.get_running_loop()
         self.events = AsyncIOEventEmitter(self._event_loop)
         self._source_list: dict[str, str] | None = None
         self._media_type: MediaType | None = None
-        self._host = f"{host}:{CONF_PORT}"
+        self._host = f"{self._device_config.address}:{CONF_PORT}"
         self._psk = psk
         self._session = None
         self._cookies = None
@@ -308,6 +155,7 @@ class ZidooRC:
         self._update_lock = Lock()
         self._media_image_url = None
         self._media_position_updated_at: datetime | None = None
+        self._reconnect_retry = 0
 
     @property
     def state(self) -> States:
@@ -320,7 +168,7 @@ class ZidooRC:
         updated_data: dict[str, Any] = {
             MediaAttr.STATE: self.state,
             MediaAttr.MEDIA_POSITION: self.media_position if self.media_position else 0,
-            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0
+            MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0,
         }
         if self.media_position_updated_at:
             updated_data[MediaAttr.MEDIA_POSITION_UPDATED_AT] = self.media_position_updated_at
@@ -396,7 +244,7 @@ class ZidooRC:
         return self._media_info.get("album")
 
     @property
-    def media_duration(self) -> float:
+    def media_duration(self) -> float | None:
         """Duration of current playing media in seconds."""
         duration = self._media_info.get("duration")
         if duration:
@@ -404,7 +252,7 @@ class ZidooRC:
         return None
 
     @property
-    def media_position(self) -> float:
+    def media_position(self) -> float | None:
         """Position of current playing media in seconds."""
         position = self._media_info.get("position")
         if position:
@@ -455,7 +303,7 @@ class ZidooRC:
 
     async def update(self) -> None:
         """Update data callback."""
-        # pylint: disable = R0915,R1702
+        # pylint: disable = R0915,R1702, R0914
         if not self.is_connected():
             await self.connect()
         updated_data = {}
@@ -588,7 +436,6 @@ class ZidooRC:
             else:
                 return None
 
-
         await self._connect_lock.acquire()
         self._connect_lock_time = time.time()
         # /connect?uuid= requires authorization for each client
@@ -678,10 +525,10 @@ class ZidooRC:
     def _wakeonlan(self) -> None:
         """Send WOL command. to known mac addresses."""
         messages = []
-        if self._ethernet_mac is not None:
-            messages.append(self._create_magic_packet(self._ethernet_mac))
-        if self._wifi_mac is not None:
-            messages.append(self._create_magic_packet(self._wifi_mac))
+        if self._device_config.net_mac_address is not None:
+            messages.append(self._create_magic_packet(self._device_config.net_mac_address))
+        if self._device_config.wifi_mac_address is not None:
+            messages.append(self._create_magic_packet(self._device_config.wifi_mac_address))
         if len(messages) > 0:
             socket_instance = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             socket_instance.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -713,7 +560,7 @@ class ZidooRC:
     async def _req_json(
         self,
         url: str,
-        # pylint: disable = W0102
+        # pylint: disable = W0102, R0917
         params: dict = {},
         log_errors: bool = True,
         timeout: int = TIMEOUT,
@@ -791,7 +638,7 @@ class ZidooRC:
         url = f"http://{self._host}/{url}"
 
         try:
-            response = await self._session.get(
+            response: ClientResponse = await self._session.get(
                 URL(url, encoded=True),
                 params=params,
                 cookies=self._cookies,
@@ -1619,7 +1466,7 @@ class ZidooRC:
                     ids.append(str(_id))
         return ids
 
-    async def play_music(self, media_id: int = None, media_type: int = "music", music_id: int = None) -> bool:
+    async def play_music(self, media_id: int = None, media_type: str = "music", music_id: str | None = None) -> bool:
         """Async Play video content by id.
 
         Parameters
@@ -1732,7 +1579,7 @@ class ZidooRC:
         return_value["filelist"] = share_list
         return return_value
 
-    def generate_image_url(self, media_id: int, media_type: int, width: int = 400, height: int = None) -> str:
+    def generate_image_url(self, media_id: int, media_type: int, width: int = 400, height: int = None) -> str | None:
         """Get link to thumbnail."""
         if media_type in ZVIDEO_SEARCH_TYPES:
             if height is None:

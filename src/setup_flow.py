@@ -9,9 +9,6 @@ import asyncio
 import logging
 from enum import IntEnum
 
-import config
-import discover
-from config import DeviceInstance
 from ucapi import (
     AbortDriverSetup,
     DriverSetupRequest,
@@ -23,6 +20,10 @@ from ucapi import (
     SetupError,
     UserDataResponse,
 )
+
+import config
+import discover
+from config import DeviceInstance
 from zidooaio import ZidooRC
 
 _LOG = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ _user_input_discovery = RequestUserInput(
 )
 
 
+# pylint: disable=R0911
 async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
     """
     Dispatch driver setup requests to corresponding handlers.
@@ -95,16 +97,14 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
                 _setup_step = SetupSteps.DEVICE_CONFIGURATION_MODE
                 _LOG.debug("Starting normal setup workflow")
                 return _user_input_discovery
-            else:
-                _LOG.debug("User requested backup/restore of configuration")
-                return await _handle_backup_restore_step()
+            _LOG.debug("User requested backup/restore of configuration")
+            return await _handle_backup_restore_step()
         if _setup_step == SetupSteps.DEVICE_CONFIGURATION_MODE:
             if "action" in msg.input_values:
                 _LOG.debug("Setup flow starts with existing configuration")
                 return await handle_configuration_mode(msg)
-            else:
-                _LOG.debug("Setup flow configuration mode")
-                return await _handle_discovery(msg)
+            _LOG.debug("Setup flow configuration mode")
+            return await _handle_discovery(msg)
         if _setup_step == SetupSteps.DISCOVER and "address" in msg.input_values:
             return await _handle_discovery(msg)
         if _setup_step == SetupSteps.DEVICE_CHOICE and "choice" in msg.input_values:
@@ -117,10 +117,6 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
     elif isinstance(msg, AbortDriverSetup):
         _LOG.info("Setup was aborted with code: %s", msg.error)
         _setup_step = SetupSteps.INIT
-
-    # user confirmation not used in setup process
-    # if isinstance(msg, UserConfirmationResponse):
-    #     return handle_user_confirmation(msg)
 
     return SetupError()
 
@@ -243,43 +239,43 @@ async def handle_driver_setup(
                 },
             ],
         )
-    else:
-        # Initial setup, make sure we have a clean configuration
-        config.devices.clear()  # triggers device instance removal
-        _setup_step = SetupSteps.WORKFLOW_MODE
-        return RequestUserInput(
-            {"en": "Configuration mode", "de": "Konfigurations-Modus"},
-            [
-                {
-                    "field": {
-                        "dropdown": {
-                            "value": "normal",
-                            "items": [
-                                {
-                                    "id": "normal",
-                                    "label": {
-                                        "en": "Start the configuration of the integration",
-                                        "fr": "Démarrer la configuration de l'intégration",
-                                    },
+
+    # Initial setup, make sure we have a clean configuration
+    config.devices.clear()  # triggers device instance removal
+    _setup_step = SetupSteps.WORKFLOW_MODE
+    return RequestUserInput(
+        {"en": "Configuration mode", "de": "Konfigurations-Modus"},
+        [
+            {
+                "field": {
+                    "dropdown": {
+                        "value": "normal",
+                        "items": [
+                            {
+                                "id": "normal",
+                                "label": {
+                                    "en": "Start the configuration of the integration",
+                                    "fr": "Démarrer la configuration de l'intégration",
                                 },
-                                {
-                                    "id": "backup_restore",
-                                    "label": {
-                                        "en": "Backup or restore devices configuration",
-                                        "fr": "Sauvegarder ou restaurer la configuration des appareils",
-                                    },
+                            },
+                            {
+                                "id": "backup_restore",
+                                "label": {
+                                    "en": "Backup or restore devices configuration",
+                                    "fr": "Sauvegarder ou restaurer la configuration des appareils",
                                 },
-                            ],
-                        }
-                    },
-                    "id": "configuration_mode",
-                    "label": {
-                        "en": "Configuration mode",
-                        "fr": "Mode de configuration",
-                    },
-                }
-            ],
-        )
+                            },
+                        ],
+                    }
+                },
+                "id": "configuration_mode",
+                "label": {
+                    "en": "Configuration mode",
+                    "fr": "Mode de configuration",
+                },
+            }
+        ],
+    )
 
 
 async def handle_configuration_mode(
@@ -351,7 +347,8 @@ async def handle_configuration_mode(
                         "id": "always_on",
                         "label": {
                             "en": "Keep connection alive (faster initialization, but consumes more battery)",
-                            "fr": "Conserver la connexion active (lancement plus rapide, mais consomme plus de batterie)",
+                            "fr": "Conserver la connexion active (lancement plus rapide, mais consomme plus de "
+                                  "batterie)",
                         },
                         "field": {"checkbox": {"value": _reconfigured_device.always_on}},
                     },
@@ -391,7 +388,7 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
         _LOG.debug("Starting manual driver setup for %s", address)
         try:
             # simple connection check
-            device = ZidooRC(address, None)
+            device = ZidooRC(DeviceInstance(id=address, name=address, address=address))
             data = await device.connect()
             await device.disconnect()
             friendly_name = data["model"]
@@ -462,7 +459,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     _LOG.debug("Chosen Zidoo: %s. Trying to connect and retrieve device information...", host)
     try:
         # connection check and mac_address extraction for wakeonlan
-        device = ZidooRC(host, None)
+        device = ZidooRC(DeviceInstance(id=host, name=host, address=host))
         data = await device.connect()
         net_mac_address = data.get("net_mac")
         wifi_mac_address = data.get("wif_mac")
@@ -516,7 +513,8 @@ async def _handle_backup_restore_step() -> RequestUserInput:
     return RequestUserInput(
         {
             "en": "Backup or restore devices configuration (all existing devices will be removed)",
-            "fr": "Sauvegarder ou restaurer la configuration des appareils (tous les appareils existants seront supprimés)",
+            "fr": "Sauvegarder ou restaurer la configuration des appareils (tous les appareils existants seront "
+                  "supprimés)",
         },
         [
             {
@@ -582,7 +580,7 @@ async def _handle_backup_restore(msg: UserDataResponse) -> SetupComplete | Setup
     updated_config = msg.input_values["config"]
     _LOG.info("Replacing configuration with : %s", updated_config)
     if not config.devices.import_config(updated_config):
-        _LOG.error("Setup error : unable to import updated configuration", updated_config)
+        _LOG.error("Setup error : unable to import updated configuration %s", updated_config)
         return SetupError(error_type=IntegrationSetupError.OTHER)
     _LOG.debug("Configuration imported successfully")
 
