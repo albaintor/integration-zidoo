@@ -137,7 +137,7 @@ class ZidooMediaPlayer(MediaPlayer):
         elif cmd_id == Commands.OFF:
             res = await self._device.turn_off()
         elif cmd_id == Commands.TOGGLE:
-            res = await self._device.async_power_toggle()
+            res = await self._device.power_toggle()
         elif cmd_id == Commands.SELECT_SOURCE:
             res = await self._device.start_app(params.get("source"))
         elif cmd_id == Commands.NEXT:

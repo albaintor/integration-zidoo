@@ -48,6 +48,7 @@ class DeviceInstance:
     net_mac_address: str | None = field(default="")
     wifi_mac_address: str | None = field(default="")
     always_on: bool | None = field(default=False)
+    refresh_interval: int | None = field(default=10)
 
     def __post_init__(self):
         """Apply default values on missing fields."""
@@ -140,6 +141,7 @@ class Devices:
                 item.net_mac_address = device_instance.net_mac_address
                 item.wifi_mac_address = device_instance.wifi_mac_address
                 item.always_on = device_instance.always_on
+                item.refresh_interval = device_instance.refresh_interval
                 return self.store()
         return False
 

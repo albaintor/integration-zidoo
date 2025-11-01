@@ -352,6 +352,22 @@ async def handle_configuration_mode(
                         },
                         "field": {"checkbox": {"value": _reconfigured_device.always_on}},
                     },
+                    {
+                        "id": "refresh_interval",
+                        "label": {
+                            "en": "Refresh interval (seconds)",
+                            "fr": "Délai de réactualisation",
+                        },
+                        "field": {
+                            "number": {
+                                "value": _reconfigured_device.refresh_interval,
+                                "min": 5,
+                                "max": 120,
+                                "steps": 1,
+                                "decimals": 0,
+                            }
+                        },
+                    },
                 ],
             )
         case "reset":
@@ -440,6 +456,14 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
                 },
                 "field": {"checkbox": {"value": False}},
             },
+            {
+                "id": "refresh_interval",
+                "label": {
+                    "en": "Refresh interval (seconds)",
+                    "fr": "Délai de réactualisation",
+                },
+                "field": {"number": {"value": 10, "min": 5, "max": 120, "steps": 1, "decimals": 0}},
+            },
         ],
     )
 
@@ -456,6 +480,10 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     # pylint: disable = W0718
     host = msg.input_values["choice"]
     always_on = msg.input_values.get("always_on") == "true"
+    try:
+        refresh_interval = int(msg.input_values.get("refresh_interval", 10))
+    except ValueError:
+        return SetupError(error_type=IntegrationSetupError.OTHER)
     _LOG.debug("Chosen Zidoo: %s. Trying to connect and retrieve device information...", host)
     try:
         # connection check and mac_address extraction for wakeonlan
@@ -490,6 +518,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
             net_mac_address=net_mac_address,
             wifi_mac_address=wifi_mac_address,
             always_on=always_on,
+            refresh_interval=refresh_interval,
         )
     )  # triggers ZidooAVR instance creation
     config.devices.store()
@@ -551,12 +580,17 @@ async def _handle_device_reconfigure(msg: UserDataResponse) -> SetupComplete | S
     net_mac_address = msg.input_values.get("net_mac_address", "")
     wifi_mac_address = msg.input_values.get("wifi_mac_address", "")
     always_on = msg.input_values.get("always_on") == "true"
+    try:
+        refresh_interval = int(msg.input_values.get("refresh_interval", 10))
+    except ValueError:
+        return SetupError(error_type=IntegrationSetupError.OTHER)
 
     _LOG.debug("User has changed configuration")
     _reconfigured_device.address = address
     _reconfigured_device.net_mac_address = net_mac_address
     _reconfigured_device.wifi_mac_address = wifi_mac_address
     _reconfigured_device.always_on = always_on
+    _reconfigured_device.refresh_interval = refresh_interval
 
     config.devices.add_or_update(_reconfigured_device)  # triggers ATV instance update
     await asyncio.sleep(1)

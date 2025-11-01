@@ -51,6 +51,7 @@ SCAN_INTERVAL = timedelta(seconds=10)
 SCAN_INTERVAL_RAPID = timedelta(seconds=1)
 CONNECTION_RETRIES = 10
 CONNECT_LOCK_TIMEOUT = 20
+REFRESH_INTERVAL = 10
 
 
 # pylint: disable = C0302
@@ -75,10 +76,36 @@ TIMEOUT_SEARCH = 10  # for searches
 RETRIES = 3  # default retries
 CONF_PORT = 9529  # default api port
 DEFAULT_COUNT = 250  # default list limit
+UPDATE_LOCK_TIMEOUT = 10.0
 
 
 _ZidooDeviceT = TypeVar("_ZidooDeviceT", bound="ZidooRC")
 _P = ParamSpec("_P")
+
+
+def debounce(wait):
+    """Debounce function."""
+
+    def decorator(func):
+        task: Task | None = None
+
+        @wraps(func)
+        async def debounced(*args, **kwargs):
+            nonlocal task
+
+            async def call_func():
+                """Call wrapped function."""
+                await asyncio.sleep(wait)
+                await func(*args, **kwargs)
+
+            if task and not task.done():
+                task.cancel()
+            task = asyncio.create_task(call_func())
+            return task
+
+        return debounced
+
+    return decorator
 
 
 def cmd_wrapper(
@@ -156,6 +183,8 @@ class ZidooRC:
         self._media_image_url = None
         self._media_position_updated_at: datetime | None = None
         self._reconnect_retry = 0
+        self._update_lock = Lock()
+        self._update_lock_time: float = 0
 
     @property
     def state(self) -> States:
@@ -271,29 +300,19 @@ class ZidooRC:
         """Image url of current playing media."""
         return self.generate_current_image_url()
 
-    async def async_turn_on(self) -> None:
-        """Turn the media player on."""
-        if self._state == States.OFF:
-            await self.turn_on()
-
-    async def async_turn_off(self) -> None:
-        """Turn off media player."""
-        if self._state != States.OFF:
-            await self.turn_off()
-
     def update_config(self, device_config: DeviceInstance):
         """Update existing configuration."""
         self._device_config = device_config
 
     @cmd_wrapper
-    async def async_power_toggle(self) -> None:
+    async def power_toggle(self) -> None:
         """Turn off media player."""
         if self._state != States.OFF:
             await self.turn_off()
         else:
             await self.turn_on()
 
-    async def async_refresh_channels(self, force=True):
+    async def refresh_channels(self, force=True):
         """Update source list."""
         if not force and not self._source_list:
             sources = await self.load_source_list()
@@ -301,9 +320,31 @@ class ZidooRC:
             for key in sources:
                 self._source_list.append(key)
 
+    @debounce(2)
+    async def manual_update(self):
+        """Manual update method debounced, which means that when it is called multiple times the timer is resetted
+        and the update method will be called once."""
+        await self.update()
+
     async def update(self) -> None:
         """Update data callback."""
         # pylint: disable = R0915,R1702, R0914
+        if self._update_lock.locked():
+            _LOGGER.debug("[%s] Update is locked", self._device_config.address)
+            if time.time() - self._update_lock_time > UPDATE_LOCK_TIMEOUT:
+                _LOGGER.warning(
+                    "[%s] Update is locked since a too long time, unlock it anyway", self._device_config.address
+                )
+                try:
+                    self._update_lock.release()
+                except RuntimeError:
+                    pass
+            else:
+                return
+
+        await self._update_lock.acquire()
+        self._update_lock_time = time.time()
+
         if not self.is_connected():
             await self.connect()
         updated_data = {}
@@ -314,7 +355,7 @@ class ZidooRC:
             if self.is_connected():
                 state = States.PAUSED
                 source_list = self._source_list
-                await self.async_refresh_channels(force=False)
+                await self.refresh_channels(force=False)
                 if source_list != self._source_list:
                     updated_data[MediaAttr.SOURCE_LIST] = self.source_list
                 # Save some data to check change later
@@ -380,7 +421,9 @@ class ZidooRC:
                 self._media_type = media_type
                 updated_data[MediaAttr.MEDIA_TYPE] = self._media_type
         except Exception:  # pylint: disable=broad-except
+            self._update_lock.release()
             return
+        self._update_lock.release()
 
         if state != self._last_state:
             _LOGGER.debug("%s New state (%s)", self._device_config.name, state)
@@ -461,8 +504,16 @@ class ZidooRC:
     async def disconnect(self) -> None:
         """Async Close connection."""
         await self.stop_polling()
+        try:
+            self._update_lock.release()
+        except RuntimeError:
+            pass
         if self._session:
-            await self._session.close()
+            try:
+                await self._session.close()
+            # pylint: disable = W0718
+            except Exception:
+                pass
         self._psk = None
         self._session = None
 
@@ -496,7 +547,7 @@ class ZidooRC:
                     self._reconnect_retry = 0
                     _LOGGER.debug("Device %s is on again", self.id)
             await self.update()
-            await asyncio.sleep(10)
+            await asyncio.sleep(REFRESH_INTERVAL)
 
         self._update_task = None
 
@@ -1674,17 +1725,23 @@ class ZidooRC:
     @cmd_wrapper
     async def volume_up(self):
         """Async Volume up the media player."""
-        return await self.send_key(ZKEYS.ZKEY_VOLUME_UP)
+        res = await self.send_key(ZKEYS.ZKEY_VOLUME_UP)
+        await self.manual_update()
+        return res
 
     @cmd_wrapper
     async def volume_down(self):
         """Async Volume down media player."""
-        return await self.send_key(ZKEYS.ZKEY_VOLUME_DOWN)
+        res = await self.send_key(ZKEYS.ZKEY_VOLUME_DOWN)
+        await self.manual_update()
+        return res
 
     @cmd_wrapper
     async def mute_volume(self):
         """Async Send mute command."""
-        return self.send_key(ZKEYS.ZKEY_MUTE)
+        res = self.send_key(ZKEYS.ZKEY_MUTE)
+        await self.manual_update()
+        return res
 
     @cmd_wrapper
     async def media_play_pause(self):
@@ -1698,36 +1755,50 @@ class ZidooRC:
         """Async Send play command."""
         # self._send_key(ZKEYS.ZKEY_OK)
         if self._current_source == ZCONTENT_NONE and self._last_video_path:
-            return await self.play_file(self._last_video_path)
-        if self._current_source == ZCONTENT_MUSIC:
-            return await self._req_json("MusicControl/v2/playOrPause")
-        return await self.send_key(ZKEYS.ZKEY_MEDIA_PLAY)
+            res = await self.play_file(self._last_video_path)
+        elif self._current_source == ZCONTENT_MUSIC:
+            res = await self._req_json("MusicControl/v2/playOrPause")
+        else:
+            res = await self.send_key(ZKEYS.ZKEY_MEDIA_PLAY)
+        await self.manual_update()
+        return res
 
     @cmd_wrapper
     async def media_pause(self):
         """Async Send media pause command to media player."""
         if self._current_source == ZCONTENT_MUSIC:
-            return await self._req_json("MusicControl/v2/playOrPause")
-        return await self.send_key(ZKEYS.ZKEY_MEDIA_PAUSE)
+            res = await self._req_json("MusicControl/v2/playOrPause")
+        else:
+            res = await self.send_key(ZKEYS.ZKEY_MEDIA_PAUSE)
+        await self.manual_update()
+        return res
 
     @cmd_wrapper
     async def media_stop(self):
         """Async Send media pause command to media player."""
-        return await self.send_key(ZKEYS.ZKEY_MEDIA_STOP)
+        res = await self.send_key(ZKEYS.ZKEY_MEDIA_STOP)
+        await self.manual_update()
+        return res
 
     @cmd_wrapper
     async def media_next_track(self):
         """Async Send next track command."""
         if self._current_source == ZCONTENT_MUSIC:
-            return await self._req_json("MusicControl/v2/playNext")
-        return await self.send_key(ZKEYS.ZKEY_MEDIA_NEXT)
+            res = await self._req_json("MusicControl/v2/playNext")
+        else:
+            res = await self.send_key(ZKEYS.ZKEY_MEDIA_NEXT)
+        await self.manual_update()
+        return res
 
     @cmd_wrapper
     async def media_previous_track(self):
         """Async Send the previous track command."""
         if self._current_source == ZCONTENT_MUSIC:
-            return await self._req_json("MusicControl/v2/playLast")
-        await self.send_key(ZKEYS.ZKEY_MEDIA_PREVIOUS)
+            res = await self._req_json("MusicControl/v2/playLast")
+        else:
+            res = await self.send_key(ZKEYS.ZKEY_MEDIA_PREVIOUS)
+        await self.manual_update()
+        return res
 
     @cmd_wrapper
     async def set_media_position(self, position):
@@ -1746,6 +1817,7 @@ class ZidooRC:
             response = await self._set_audio_position(position)
 
         if response is not None:
+            await self.manual_update()
             return True
         return False
 
