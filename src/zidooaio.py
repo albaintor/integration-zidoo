@@ -21,7 +21,7 @@ from functools import wraps
 from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
 
 import ucapi
-from aiohttp import ClientError, ClientResponse, ClientSession, CookieJar, ClientOSError
+from aiohttp import ClientError, ClientOSError, ClientResponse, ClientSession, CookieJar
 from pyee.asyncio import AsyncIOEventEmitter
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import MediaType, States
@@ -126,6 +126,20 @@ def cmd_wrapper(
         return ucapi.StatusCodes.OK
 
     return wrapper
+
+
+def _create_magic_packet(mac_address: str) -> bytes:
+    addr_byte = mac_address.split(":")
+    hw_addr = struct.pack(
+        "BBBBBB",
+        int(addr_byte[0], 16),
+        int(addr_byte[1], 16),
+        int(addr_byte[2], 16),
+        int(addr_byte[3], 16),
+        int(addr_byte[4], 16),
+        int(addr_byte[5], 16),
+    )
+    return b"\xff" * 6 + hw_addr * 16
 
 
 class ZidooRC:
@@ -322,8 +336,10 @@ class ZidooRC:
 
     @debounce(2)
     async def manual_update(self):
-        """Manual update method debounced, which means that when it is called multiple times the timer is resetted
-        and the update method will be called once."""
+        """Manual update method debounced.
+
+        When it is called multiple times the timer is resetted and the update method will be called once.
+        """
         await self.update()
 
     async def update(self) -> None:
@@ -560,26 +576,13 @@ class ZidooRC:
         """
         return self._cookies is not None
 
-    def _create_magic_packet(self, mac_address: str) -> bytes:
-        addr_byte = mac_address.split(":")
-        hw_addr = struct.pack(
-            "BBBBBB",
-            int(addr_byte[0], 16),
-            int(addr_byte[1], 16),
-            int(addr_byte[2], 16),
-            int(addr_byte[3], 16),
-            int(addr_byte[4], 16),
-            int(addr_byte[5], 16),
-        )
-        return b"\xff" * 6 + hw_addr * 16
-
     def _wakeonlan(self) -> None:
         """Send WOL command. to known mac addresses."""
         messages = []
         if self._device_config.net_mac_address is not None:
-            messages.append(self._create_magic_packet(self._device_config.net_mac_address))
+            messages.append(_create_magic_packet(self._device_config.net_mac_address))
         if self._device_config.wifi_mac_address is not None:
-            messages.append(self._create_magic_packet(self._device_config.wifi_mac_address))
+            messages.append(_create_magic_packet(self._device_config.wifi_mac_address))
         if len(messages) > 0:
             socket_instance = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             socket_instance.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -611,8 +614,7 @@ class ZidooRC:
     async def _req_json(
         self,
         url: str,
-        # pylint: disable = W0102, R0917
-        params: dict = {},
+        params=None,
         log_errors: bool = True,
         timeout: int = TIMEOUT,
         max_retries: int = RETRIES,
@@ -634,6 +636,8 @@ class ZidooRC:
             json
                 raw API response
         """
+        if params is None:
+            params = {}
         while max_retries >= 0:
             response = await self._send_cmd(url, params, log_errors, timeout)
 
@@ -661,7 +665,7 @@ class ZidooRC:
         params: dict = None,
         log_errors: bool = True,
         timeout: int = TIMEOUT,
-    ) -> ClientResponse | None :
+    ) -> ClientResponse | None:
         """Async Send request command via HTTP json to player.
 
         Parameters
@@ -713,6 +717,7 @@ class ZidooRC:
                         timeout=timeout,
                         headers=headers,
                     )
+                # pylint: disable=W0718
                 except Exception:
                     pass
         except ConnectionError as err:
@@ -1048,7 +1053,6 @@ class ZidooRC:
         if self._power_status:
             return "on"
         return "off"
-
 
     async def get_app_list(self, log_errors=True) -> dict[str, str]:
         """Async Get the list of installed apps.
@@ -1822,6 +1826,7 @@ class ZidooRC:
 
         if response is not None and response.get("status") == 200:
             return response
+        return None
 
     async def _set_audio_position(self, position) -> dict | None:
         """Async Set current position for music player."""
