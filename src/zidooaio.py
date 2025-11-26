@@ -611,6 +611,7 @@ class ZidooRC:
             return True
         return False
 
+    # pylint: disable=R0917
     async def _req_json(
         self,
         url: str,
