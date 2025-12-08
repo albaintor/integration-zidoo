@@ -185,7 +185,7 @@ class ZidooMediaPlayer(MediaPlayer):
         elif cmd_id == Commands.SUBTITLE:
             res = await self._device.send_key(ZKEYS.ZKEY_SUBTITLE)
         elif cmd_id == Commands.SEEK:
-            res = await self._device.set_media_position(params.get("media_position", 0))
+            res = await self._device.set_media_position(params.get("media_position", 0)*1000)
         elif cmd_id == Commands.DIGIT_0:
             res = await self._device.send_key(ZKEYS.ZKEY_NUM_0)
         elif cmd_id == Commands.DIGIT_1:
