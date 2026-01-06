@@ -50,7 +50,6 @@ async def main():
     # await pair()
     # exit(0)
     client = ZidooRC(
-        host=address,
         device_config=DeviceInstance(
             id="zidoo",
             name="Zidoo",
@@ -67,7 +66,7 @@ async def main():
     print_json(data=properties)
     properties = await client.get_playing_info()
     print("Info :")
-    if properties["date"] and isinstance(properties["date"], datetime):
+    if properties.get("date", None) and isinstance(properties["date"], datetime):
         properties["date"] = str(properties["date"])
     print_json(data=properties)
     properties = {

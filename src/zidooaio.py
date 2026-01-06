@@ -254,7 +254,7 @@ class ZidooRC:
         if title is not None:
             titles.append(title)
         title = self._media_info.get("title")
-        if title is not None:
+        if title is not None and not title in titles:
             titles.append(title)
         if self._media_info.get("season") or self._media_info.get("episode"):
             episode = ""
@@ -415,6 +415,7 @@ class ZidooRC:
                     self._last_update = datetime.utcnow()
 
                 if title != self.media_title:
+                    _LOGGER.debug("[%s] New media detected %s", self._device_config.address, self._media_info)
                     updated_data[MediaAttr.MEDIA_TITLE] = self.media_title
                 if album != self.media_album_name:
                     updated_data[MediaAttr.MEDIA_ALBUM] = self.media_album_name
