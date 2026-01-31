@@ -14,16 +14,15 @@ from enum import Enum
 from typing import Any, Type
 
 import ucapi
-from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import States
 
 import config
+import media_player
 import selector
 import sensor
-from config import ZidooEntity
-import media_player
 import setup_flow
 import zidooaio
+from config import ZidooEntity
 from zidooaio import ZidooClient
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
@@ -113,7 +112,6 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
         device_id = entity.deviceid
         if device_id in _configured_devices:
             device = _configured_devices[device_id]
-            state = device.state
             if isinstance(entity, media_player.ZidooMediaPlayer):
                 api.configured_entities.update_attributes(
                     entity_id, filter_attributes(device.attributes, ucapi.media_player.Attributes)

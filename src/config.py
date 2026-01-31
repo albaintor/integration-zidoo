@@ -13,7 +13,7 @@ from asyncio import Lock
 from dataclasses import dataclass, field, fields
 from typing import Callable, Iterator
 
-from ucapi import EntityTypes, Entity
+from ucapi import Entity, EntityTypes
 
 from const import MANUFACTURER
 

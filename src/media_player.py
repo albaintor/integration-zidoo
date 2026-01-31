@@ -19,7 +19,7 @@ from ucapi.media_player import (
     States,
 )
 
-from config import ConfigDevice, create_entity_id, ZidooEntity
+from config import ConfigDevice, ZidooEntity, create_entity_id
 from zidooaio import ZKEYS, ZidooClient
 
 _LOG = logging.getLogger(__name__)
@@ -115,11 +115,11 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
         return self._config_device.id
 
     async def command(
-            self,
-            cmd_id: str,
-            params: dict[str, Any] | None = None,
-            *,
-            websocket: Any,
+        self,
+        cmd_id: str,
+        params: dict[str, Any] | None = None,
+        *,
+        websocket: Any,
     ) -> StatusCodes:
         """
         Media-player entity command handler.
@@ -197,7 +197,7 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
         elif cmd_id == Commands.SUBTITLE:
             res = await self._device.send_key(ZKEYS.ZKEY_SUBTITLE)
         elif cmd_id == Commands.SEEK:
-            res = await self._device.set_media_position(params.get("media_position", 0)*1000)
+            res = await self._device.set_media_position(params.get("media_position", 0) * 1000)
         elif cmd_id == Commands.DIGIT_0:
             res = await self._device.send_key(ZKEYS.ZKEY_NUM_0)
         elif cmd_id == Commands.DIGIT_1:

@@ -1,7 +1,7 @@
 """Constants for Zidoo component."""
 
 import logging
-from enum import StrEnum, Enum
+from enum import Enum, StrEnum
 
 from ucapi.media_player import MediaType
 

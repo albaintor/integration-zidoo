@@ -289,7 +289,7 @@ class ZidooClient:
         if title is not None:
             titles.append(title)
         title = self._media_info.get("title")
-        if title is not None and not title in titles:
+        if title is not None and title not in titles:
             titles.append(title)
         if self._media_info.get("season") or self._media_info.get("episode"):
             episode = ""
