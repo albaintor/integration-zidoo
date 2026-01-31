@@ -2,7 +2,7 @@
 """
 This module implements a Remote Two integration driver for Zidoo STB.
 
-:copyright: (c) 2023 by Unfolded Circle ApS.
+:copyright: (c) 2026 by Albaintor
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
@@ -330,6 +330,8 @@ def _register_available_entities(config_device: config.ConfigDevice, device: Zid
         selector.ZidooSubtitleStreamSelect(config_device, device),
         sensor.ZidooAudioStream(config_device, device),
         sensor.ZidooSubtitleStream(config_device, device),
+        sensor.ZidooVideoInfo(config_device, device),
+        sensor.ZidooAudioInfo(config_device, device),
     ]
     for entity in entities:
         if api.available_entities.contains(entity.id):

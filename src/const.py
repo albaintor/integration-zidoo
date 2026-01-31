@@ -13,11 +13,10 @@ class ZidooSensors(str, Enum):
 
     SENSOR_AUDIO_STREAM = "sensor_audio_stream"
     SENSOR_SUBTITLE_STREAM = "sensor_subtitle_stream"
-    SENSOR_CHAPTER = "sensor_chapter"
     SENSOR_VIDEO_INFO = "sensor_video_info"
     SENSOR_AUDIO_INFO = "sensor_audio_info"
-    SENSOR_VOLUME = "sensor_volume"
-    SENSOR_VOLUME_MUTED = "sensor_volume_muted"
+    # SENSOR_VOLUME = "sensor_volume"
+    # SENSOR_VOLUME_MUTED = "sensor_volume_muted"
 
 
 class ZidooSelects(str, Enum):
@@ -25,7 +24,6 @@ class ZidooSelects(str, Enum):
 
     SELECT_AUDIO_STREAM = "select_audio_stream"
     SELECT_SUBTITLE_STREAM = "select_subtitle_stream"
-    SELECT_CHAPTER = "select_chapter"
 
 
 DOMAIN = "zidoo"

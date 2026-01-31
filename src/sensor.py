@@ -138,80 +138,56 @@ class ZidooSubtitleStream(ZidooSensor):
         return self._device.subtitle_track
 
 
-# class KodiChapter(ZidooSensor):
-#     """Current chapter sensor entity."""
-#
-#     ENTITY_NAME = "chapter"
-#     SENSOR_NAME = ZidooSensors.SENSOR_CHAPTER
-#
-#     def __init__(self, config_device: ConfigDevice, device: zidooaio.ZidooClient):
-#         """Initialize the class."""
-#         entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{self.ENTITY_NAME}"
-#         super().__init__(
-#             entity_id,
-#             {
-#                 "en": f"{config_device.get_device_part()}Chapter",
-#                 "fr": f"{config_device.get_device_part()}Chapitre",
-#             },
-#             config_device,
-#             device,
-#         )
-#
-#     @property
-#     def sensor_value(self) -> str:
-#         """Return sensor value."""
-#         return self._device.current_chapter if self._device.current_chapter else ""
-#
-#
-# class KodiVideoInfo(ZidooSensor):
-#     """Video info sensor entity."""
-#
-#     ENTITY_NAME = "video_info"
-#     SENSOR_NAME = ZidooSensors.SENSOR_VIDEO_INFO
-#
-#     def __init__(self, config_device: ConfigDevice, device: zidooaio.ZidooClient):
-#         """Initialize the class."""
-#         entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{self.ENTITY_NAME}"
-#         super().__init__(
-#             entity_id,
-#             {
-#                 "en": f"{config_device.get_device_part()}Video info",
-#                 "fr": f"{config_device.get_device_part()}Info vidéo",
-#             },
-#             config_device,
-#             device,
-#         )
-#
-#     @property
-#     def sensor_value(self) -> str:
-#         """Return sensor value."""
-#         return self._device.video_info
-#
-#
-# class KodiAudioInfo(ZidooSensor):
-#     """Audio info sensor entity."""
-#
-#     ENTITY_NAME = "audio_info"
-#     SENSOR_NAME = ZidooSensors.SENSOR_AUDIO_INFO
-#
-#     def __init__(self, config_device: ConfigDevice, device: zidooaio.ZidooClient):
-#         """Initialize the class."""
-#         entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{self.ENTITY_NAME}"
-#         super().__init__(
-#             entity_id,
-#             {
-#                 "en": f"{config_device.get_device_part()}Audio info",
-#                 "fr": f"{config_device.get_device_part()}Info audio",
-#             },
-#             config_device,
-#             device,
-#         )
-#
-#     @property
-#     def sensor_value(self) -> str:
-#         """Return sensor value."""
-#         return self._device.audio_info
-#
+class ZidooVideoInfo(ZidooSensor):
+    """Video info sensor entity."""
+
+    ENTITY_NAME = "video_info"
+    SENSOR_NAME = ZidooSensors.SENSOR_VIDEO_INFO
+
+    def __init__(self, config_device: ConfigDevice, device: zidooaio.ZidooClient):
+        """Initialize the class."""
+        entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{self.ENTITY_NAME}"
+        super().__init__(
+            entity_id,
+            {
+                "en": f"{config_device.get_device_part()}Video info",
+                "fr": f"{config_device.get_device_part()}Info vidéo",
+            },
+            config_device,
+            device,
+        )
+
+    @property
+    def sensor_value(self) -> str:
+        """Return sensor value."""
+        return self._device.video_info
+
+
+class ZidooAudioInfo(ZidooSensor):
+    """Audio info sensor entity."""
+
+    ENTITY_NAME = "audio_info"
+    SENSOR_NAME = ZidooSensors.SENSOR_AUDIO_INFO
+
+    def __init__(self, config_device: ConfigDevice, device: zidooaio.ZidooClient):
+        """Initialize the class."""
+        entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{self.ENTITY_NAME}"
+        super().__init__(
+            entity_id,
+            {
+                "en": f"{config_device.get_device_part()}Audio info",
+                "fr": f"{config_device.get_device_part()}Info audio",
+            },
+            config_device,
+            device,
+        )
+
+    @property
+    def sensor_value(self) -> str:
+        """Return sensor value."""
+        return self._device.audio_info
+
+
 #
 # class KodiSensorVolume(ZidooSensor):
 #     """Current input source sensor entity."""

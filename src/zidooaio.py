@@ -1,8 +1,10 @@
 """
-Zidoo Remote Control API.
+Zidoo Client.
 
-By Wizmo
+:copyright: (c) 2026 by Albaintor
+:license: Mozilla Public License Version 2.0, see LICENSE for more details.
 References
+    HA integration by Wizmo : https://github.com/wizmo2/zidoo-player
     oem v1: https://www.zidoo.tv/Support/developer/
     oem v2: http://apidoc.zidoo.tv/s/98365225
 """
@@ -16,7 +18,7 @@ import time
 import urllib.parse
 from asyncio import AbstractEventLoop, CancelledError, Lock, Task
 from datetime import datetime, timedelta, timezone
-from enum import IntEnum
+from enum import StrEnum
 from functools import wraps
 from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
 
@@ -59,14 +61,15 @@ ERROR_OS_WAIT = 0.5
 # pylint: disable = C0302
 
 
-class Events(IntEnum):
+class Events(StrEnum):
     """Internal driver events."""
 
-    CONNECTED = 0
-    ERROR = 1
-    UPDATE = 2
-    IP_ADDRESS_CHANGED = 3
-    DISCONNECTED = 4
+    CONNECTING = "CONNECTING"
+    CONNECTED = "CONNECTED"
+    DISCONNECTED = "DISCONNECTED"
+    ERROR = "ERROR"
+    UPDATE = "UPDATE"
+    IP_ADDRESS_CHANGED = "IP_ADDRESS_CHANGED"
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -192,7 +195,7 @@ class ZidooClient:
         self._mac = mac
         self._event_loop = loop or asyncio.get_running_loop()
         self.events = AsyncIOEventEmitter(self._event_loop)
-        self._source_list: dict[str, str] | None = None
+        self._source_list: list[str] | None = None
         self._media_type: MediaType | None = None
         self._host = f"{self._device_config.address}:{CONF_PORT}"
         self._psk = psk
@@ -209,11 +212,11 @@ class ZidooClient:
         self._movie_info = {}
         self._current_subtitle = 0
         self._current_audio = 0
-        self._song_list = None
+        self._song_list: list[str] | None = None
         self._state = States.OFF
         self._last_update = None
         self._last_state = States.OFF
-        self._media_info = {}
+        self._media_info: dict[str, Any] = {}
         self._update_interval = SCAN_INTERVAL
         self._connect_lock = Lock()
         self._connect_lock_time: float = 0
@@ -247,6 +250,8 @@ class ZidooClient:
             },
             ZidooSensors.SENSOR_AUDIO_STREAM: self.audio_track,
             ZidooSensors.SENSOR_SUBTITLE_STREAM: self.subtitle_track,
+            ZidooSensors.SENSOR_VIDEO_INFO: self.video_info,
+            ZidooSensors.SENSOR_AUDIO_INFO: self.audio_info,
         }
         if self.media_position_updated_at:
             updated_data[MediaAttr.MEDIA_POSITION_UPDATED_AT] = self.media_position_updated_at
@@ -277,7 +282,7 @@ class ZidooClient:
         return self._current_source
 
     @property
-    def source_list(self) -> dict[str, str]:
+    def source_list(self) -> list[str] | None:
         """List of available input sources."""
         return self._source_list
 
@@ -375,6 +380,16 @@ class ZidooClient:
             return result[0]
         return ""
 
+    @property
+    def video_info(self) -> str:
+        """Return video info."""
+        return self._media_info.get("video", "")
+
+    @property
+    def audio_info(self) -> str:
+        """Return audio info."""
+        return self._media_info.get("audio", "")
+
     def update_config(self, device_config: ConfigDevice):
         """Update existing configuration."""
         self._device_config = device_config
@@ -449,6 +464,8 @@ class ZidooClient:
                 current_media = self._current_media
                 current_audio = self.audio_track
                 current_subtitle = self.subtitle_track
+                current_video_info = self.video_info
+                current_audio_info = self.audio_info
 
                 self._media_info = {}
                 playing_info = await self.get_playing_info()
@@ -478,7 +495,13 @@ class ZidooClient:
                             self._current_source = ZCONTENT_MUSIC
                     else:
                         media_type = MediaType.VIDEO  # None
-                    self._last_update = datetime.utcnow()
+                    self._last_update = datetime.now(timezone.utc)
+
+                if current_audio_info != self.audio_info:
+                    updated_data[ZidooSensors.SENSOR_AUDIO_INFO] = self.audio_info
+
+                if current_video_info != self.video_info:
+                    updated_data[ZidooSensors.SENSOR_VIDEO_INFO] = self.video_info
 
                 if title != self.media_title or self._current_media != current_media:
                     _LOGGER.debug("[%s] New media detected %s", self._device_config.address, self._media_info)
@@ -499,6 +522,12 @@ class ZidooClient:
                             image_url = ""
                         self._media_image_url = image_url
                         updated_data[MediaAttr.MEDIA_IMAGE_URL] = self._media_image_url
+                    else:
+                        _LOGGER.debug(
+                            "[%s] No image url detected for new media %s",
+                            self._device_config.address,
+                            self._current_media,
+                        )
 
                 if current_subtitle != self.subtitle_track:
                     if updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] is None:
@@ -883,7 +912,7 @@ class ZidooClient:
         response = await self._req_json("ZidooVideoPlay/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO)
 
         if response is not None and response.get("status") == 200:
-            _LOGGER.debug("[%s] Playback info %s", self._device_config.address, response)
+            # _LOGGER.debug("[%s] Playback info %s", self._device_config.address, response)
             if response.get("subtitle"):
                 self._current_subtitle = response["subtitle"].get("index")
             if response.get("audio"):
@@ -1626,8 +1655,9 @@ class ZidooClient:
             return True
         return False
 
-    def _get_music_ids(self, data, key="id", sub=None):
-        ids = []
+    def _get_music_ids(self, data, key="id", sub=None) -> list[str]:
+        """Return music identifiers."""
+        ids: list[str] = []
         if data:
             for item in data:
                 result = item.get(sub) if sub else item

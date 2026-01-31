@@ -189,34 +189,3 @@ class ZidooSubtitleStreamSelect(ZidooSelect):
     def select_options(self) -> list[str]:
         """Return selection list."""
         return self._device.subtitle_tracks
-
-
-# class KodiChapterSelect(ZidooSelect):
-#     """Chapter selector entity."""
-#
-#     ENTITY_NAME = "chapter"
-#     SELECT_NAME = ZidooSelects.SELECT_CHAPTER
-#
-#     def __init__(self, config_device: ConfigDevice, device: zidooaio.ZidooClient):
-#         """Initialize the class."""
-#         entity_id = f"{create_entity_id(config_device.id, EntityTypes.SELECT)}.{self.ENTITY_NAME}"
-#         super().__init__(
-#             entity_id,
-#             {
-#                 "en": f"{config_device.get_device_part()}Chapter",
-#                 "fr": f"{config_device.get_device_part()}Chapitre",
-#             },
-#             config_device,
-#             device,
-#             device.select_chapter,
-#         )
-#
-#     @property
-#     def current_option(self) -> str:
-#         """Return selector value."""
-#         return self._device.current_chapter if self._device.current_chapter is not None else ""
-#
-#     @property
-#     def select_options(self) -> list[str]:
-#         """Return selection list."""
-#         return [x.get("name", "") for x in self._device.chapters] if self._device.chapters else []
