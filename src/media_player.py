@@ -19,8 +19,8 @@ from ucapi.media_player import (
     States,
 )
 
-from config import DeviceInstance, create_entity_id
-from zidooaio import ZKEYS, ZidooRC
+from config import ConfigDevice, create_entity_id, ZidooEntity
+from zidooaio import ZKEYS, ZidooClient
 
 _LOG = logging.getLogger(__name__)
 
@@ -41,12 +41,13 @@ SIMPLE_COMMANDS = [
 ]
 
 
-class ZidooMediaPlayer(MediaPlayer):
+class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
     """Representation of a Sony Media Player entity."""
 
-    def __init__(self, config_device: DeviceInstance, device: ZidooRC):
+    def __init__(self, config_device: ConfigDevice, device: ZidooClient):
         """Initialize the class."""
         self._device = device
+        self._config_device = config_device
 
         entity_id = create_entity_id(config_device.id, EntityTypes.MEDIA_PLAYER)
         features = [
@@ -108,7 +109,18 @@ class ZidooMediaPlayer(MediaPlayer):
             options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS},
         )
 
-    async def command(self, cmd_id: str, params: dict[str, Any] | None = None) -> StatusCodes:
+    @property
+    def deviceid(self) -> str:
+        """Return the device identifier."""
+        return self._config_device.id
+
+    async def command(
+            self,
+            cmd_id: str,
+            params: dict[str, Any] | None = None,
+            *,
+            websocket: Any,
+    ) -> StatusCodes:
         """
         Media-player entity command handler.
 

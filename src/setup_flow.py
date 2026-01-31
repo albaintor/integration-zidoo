@@ -23,8 +23,8 @@ from ucapi import (
 
 import config
 import discover
-from config import DeviceInstance
-from zidooaio import ZidooRC
+from config import ConfigDevice
+from zidooaio import ZidooClient
 
 _LOG = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class SetupSteps(IntEnum):
 
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
-_reconfigured_device: DeviceInstance | None = None
+_reconfigured_device: ConfigDevice | None = None
 _user_input_discovery = RequestUserInput(
     {"en": "Setup mode", "de": "Setup Modus"},
     [
@@ -404,7 +404,7 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
         _LOG.debug("Starting manual driver setup for %s", address)
         try:
             # simple connection check
-            device = ZidooRC(DeviceInstance(id=address, name=address, address=address))
+            device = ZidooClient(ConfigDevice(id=address, name=address, address=address))
             data = await device.connect()
             await device.disconnect()
             friendly_name = data["model"]
@@ -487,7 +487,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     _LOG.debug("Chosen Zidoo: %s. Trying to connect and retrieve device information...", host)
     try:
         # connection check and mac_address extraction for wakeonlan
-        device = ZidooRC(DeviceInstance(id=host, name=host, address=host))
+        device = ZidooClient(ConfigDevice(id=host, name=host, address=host))
         data = await device.connect()
         net_mac_address = data.get("net_mac")
         wifi_mac_address = data.get("wif_mac")
@@ -511,7 +511,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
         return SetupError(error_type=IntegrationSetupError.OTHER)
 
     config.devices.add_or_update(
-        DeviceInstance(
+        ConfigDevice(
             id=unique_id,
             name=friendly_name,
             address=host,

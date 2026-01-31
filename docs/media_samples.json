@@ -38,5 +38,45 @@
     "season": 1,
     "season_name": "Saison 1",
     "series_name": "Chuck"
-}
+},
+  {
+    'status': 200,
+    'video': {
+      'status': 1,
+      'title': '28 Ans plus tard',
+      'path': '/data/system/smb/192.168.1.10#Videos/Download/28.Years.Later.2025.CUSTOM.MULTi.VF2.DV.HDR10plus.2160p.MA.WEB.H265.Atmos-zYz.mkv',
+      'currentPosition': 3263,
+      'duration': 6905000,
+      'width': 3840,
+      'height': 2160,
+      'fps': 23.97599983215332,
+      'formt': 'H.265',
+      'filesize': '20,76 GiB',
+      'bitrate': '25,0 Mb/s',
+      'output': '3840x2160P @ 60Hz  RGB  8 Bits   DV(TV-LED)',
+      'subtitleInfo': 'French(French (France) Forced)-Forced  Internal SRT (1/5)',
+      'audioInfo': 'French Dolby Digital 5.1 channel 48,0KHz (1/3)'
+    },
+    'subtitle': {
+      'index': 1,
+      'information': 'French(French (France) Forced)-Forced  Internal SRT (1/5)'
+    },
+    'audio': {
+      'index': 0,
+      'information': 'French Dolby Digital 5.1 channel 48,0KHz (1/3)'
+    },
+    'playMode': {
+      'index': 4,
+      'information': 'Tout'
+    },
+    'zoom': {
+      'index': 1,
+      'information': 'Ajustement'
+    },
+    '3D': {
+      'index': 0,
+      'information': '2D',
+      'isMvc3D': False
+    }
+  }
 ]

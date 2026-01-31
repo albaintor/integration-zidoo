@@ -14,12 +14,12 @@ import signal
 import sys
 from datetime import datetime
 from typing import Any
-
+sys.path.insert(1, "src")
 from rich import print_json
 
 import zidooaio
-from config import DeviceInstance
-from zidooaio import ZidooRC
+from config import ConfigDevice
+from zidooaio import ZidooClient
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -27,7 +27,7 @@ _LOOP = asyncio.new_event_loop()
 asyncio.set_event_loop(_LOOP)
 
 address = "192.168.1.23"
-client: ZidooRC | None = None
+client: ZidooClient | None = None
 
 
 async def on_device_update(device_id: str, update: dict[str, Any] | None) -> None:
@@ -49,8 +49,8 @@ async def main():
     _LOG.debug("Start connection")
     # await pair()
     # exit(0)
-    client = ZidooRC(
-        device_config=DeviceInstance(
+    client = ZidooClient(
+        device_config=ConfigDevice(
             id="zidoo",
             name="Zidoo",
             address=address,

@@ -27,7 +27,7 @@ from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import MediaType, States
 from yarl import URL
 
-from config import DeviceInstance
+from config import ConfigDevice
 from const import (
     ZCMD_STATUS,
     ZCONTENT_MUSIC,
@@ -45,6 +45,8 @@ from const import (
     ZUPNP_SERVERNAME,
     ZVIDEO_FILTER_TYPES,
     ZVIDEO_SEARCH_TYPES,
+    ZidooSelects,
+    ZidooSensors,
 )
 
 SCAN_INTERVAL = timedelta(seconds=10)
@@ -79,7 +81,7 @@ DEFAULT_COUNT = 250  # default list limit
 UPDATE_LOCK_TIMEOUT = 10.0
 
 
-_ZidooDeviceT = TypeVar("_ZidooDeviceT", bound="ZidooRC")
+_ZidooDeviceT = TypeVar("_ZidooDeviceT", bound="ZidooClient")
 _P = ParamSpec("_P")
 
 
@@ -142,12 +144,35 @@ def _create_magic_packet(mac_address: str) -> bytes:
     return b"\xff" * 6 + hw_addr * 16
 
 
-class ZidooRC:
+def _next_data(data, index: int) -> int:
+    """Toggle list."""
+    temp = iter(data)
+    for key in temp:
+        if key == index:
+            index = next(temp, 0)
+            return index
+    return 0
+
+
+def _build_track_name(track: dict[str, Any]) -> str:
+    """Build track name."""
+    return track.get("title", track.get("laungaue", ""))
+
+
+def _get_track_index(data: list[dict[str, Any]], track_name: str) -> int:
+    """Get track index."""
+    result = [x for x in data if _build_track_name(x) == track_name]
+    if result:
+        return result[0].get("index", -1)
+    return -1
+
+
+class ZidooClient:
     """Zidoo Media Player Remote Control."""
 
     def __init__(
         self,
-        device_config: DeviceInstance | None = None,
+        device_config: ConfigDevice | None = None,
         psk: str = None,
         mac: str = None,
         loop: AbstractEventLoop | None = None,
@@ -199,6 +224,9 @@ class ZidooRC:
         self._reconnect_retry = 0
         self._update_lock = Lock()
         self._update_lock_time: float = 0
+        self._current_media: str | None = None
+        self._audio_tracks: list[dict[str, Any]] = []
+        self._subtitles_tracks: list[dict[str, Any]] = []
 
     @property
     def state(self) -> States:
@@ -212,6 +240,13 @@ class ZidooRC:
             MediaAttr.STATE: self.state,
             MediaAttr.MEDIA_POSITION: self.media_position if self.media_position else 0,
             MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0,
+            ZidooSelects.SELECT_AUDIO_STREAM: {"current_option": self.audio_track, "options": self.audio_tracks},
+            ZidooSelects.SELECT_SUBTITLE_STREAM: {
+                "current_option": self.subtitle_track,
+                "options": self.subtitle_tracks,
+            },
+            ZidooSensors.SENSOR_AUDIO_STREAM: self.audio_track,
+            ZidooSensors.SENSOR_SUBTITLE_STREAM: self.subtitle_track,
         }
         if self.media_position_updated_at:
             updated_data[MediaAttr.MEDIA_POSITION_UPDATED_AT] = self.media_position_updated_at
@@ -314,7 +349,33 @@ class ZidooRC:
         """Image url of current playing media."""
         return self.generate_current_image_url()
 
-    def update_config(self, device_config: DeviceInstance):
+    @property
+    def subtitle_tracks(self) -> list[str]:
+        """List of subtitle tracks."""
+        return [_build_track_name(x) for x in self._subtitles_tracks]
+
+    @property
+    def audio_tracks(self) -> list[str]:
+        """List of subtitle tracks."""
+        return [_build_track_name(x) for x in self._audio_tracks]
+
+    @property
+    def subtitle_track(self) -> str:
+        """Current subtitle track."""
+        result = [_build_track_name(x) for x in self._subtitles_tracks if x.get("index", -1) == self._current_subtitle]
+        if result:
+            return result[0]
+        return ""
+
+    @property
+    def audio_track(self) -> str:
+        """Current audio track."""
+        result = [_build_track_name(x) for x in self._audio_tracks if x.get("index", -1) == self._current_audio]
+        if result:
+            return result[0]
+        return ""
+
+    def update_config(self, device_config: ConfigDevice):
         """Update existing configuration."""
         self._device_config = device_config
 
@@ -376,7 +437,6 @@ class ZidooRC:
                     updated_data[MediaAttr.SOURCE_LIST] = self.source_list
                 # Save some data to check change later
                 source = self._current_source
-                image_url = self.generate_current_image_url()
 
                 # Store current data to compare what's changed next
                 title = self.media_title
@@ -386,14 +446,20 @@ class ZidooRC:
                 position = self.media_position
                 self._media_position_updated_at = datetime.now(timezone.utc)
 
+                current_media = self._current_media
+                current_audio = self.audio_track
+                current_subtitle = self.subtitle_track
+
                 self._media_info = {}
                 playing_info = await self.get_playing_info()
                 if playing_info is None or not playing_info:
                     # self._media_type = MediaType.APP # None
                     media_type = MediaType.VIDEO
                     state = States.ON
+                    self._current_media = None
                 else:
                     self._media_info = playing_info
+                    self._current_media = playing_info.get("path")
                     status = playing_info.get("status")
                     if status and status is not None:
                         if status == 1 or status is True:
@@ -414,9 +480,38 @@ class ZidooRC:
                         media_type = MediaType.VIDEO  # None
                     self._last_update = datetime.utcnow()
 
-                if title != self.media_title:
+                if title != self.media_title or self._current_media != current_media:
                     _LOGGER.debug("[%s] New media detected %s", self._device_config.address, self._media_info)
                     updated_data[MediaAttr.MEDIA_TITLE] = self.media_title
+                    self._subtitles_tracks = await self.get_subtitle_list()
+                    self._audio_tracks = await self.get_audio_list()
+                    updated_data[ZidooSelects.SELECT_AUDIO_STREAM] = {
+                        "options": self.audio_tracks,
+                        "current_option": self.audio_track,
+                    }
+                    updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] = {
+                        "options": self.subtitle_tracks,
+                        "current_option": self.subtitle_track,
+                    }
+                    image_url = self.generate_current_image_url()
+                    if image_url != self._media_image_url:
+                        if image_url is None:
+                            image_url = ""
+                        self._media_image_url = image_url
+                        updated_data[MediaAttr.MEDIA_IMAGE_URL] = self._media_image_url
+
+                if current_subtitle != self.subtitle_track:
+                    if updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] is None:
+                        updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] = {}
+                    updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM]["current_option"] = self.subtitle_track
+                    updated_data[ZidooSensors.SENSOR_SUBTITLE_STREAM] = self.subtitle_track
+
+                if current_audio != self.audio_track:
+                    if updated_data[ZidooSelects.SELECT_AUDIO_STREAM] is None:
+                        updated_data[ZidooSelects.SELECT_AUDIO_STREAM] = {}
+                    updated_data[ZidooSelects.SELECT_AUDIO_STREAM]["current_option"] = self.audio_track
+                    updated_data[ZidooSensors.SENSOR_AUDIO_STREAM] = self.audio_track
+
                 if album != self.media_album_name:
                     updated_data[MediaAttr.MEDIA_ALBUM] = self.media_album_name
                 if artist != self.media_artist:
@@ -429,11 +524,6 @@ class ZidooRC:
                 if source != self.source:
                     updated_data[MediaAttr.SOURCE] = self.source
 
-                if image_url != self._media_image_url:
-                    if image_url is None:
-                        image_url = ""
-                    self._media_image_url = image_url
-                    updated_data[MediaAttr.MEDIA_IMAGE_URL] = self._media_image_url
             if media_type != self._media_type:
                 self._media_type = media_type
                 updated_data[MediaAttr.MEDIA_TYPE] = self._media_type
@@ -793,10 +883,12 @@ class ZidooRC:
         response = await self._req_json("ZidooVideoPlay/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO)
 
         if response is not None and response.get("status") == 200:
+            _LOGGER.debug("[%s] Playback info %s", self._device_config.address, response)
             if response.get("subtitle"):
                 self._current_subtitle = response["subtitle"].get("index")
             if response.get("audio"):
                 self._current_audio = response["audio"].get("index")
+                return_value["path"] = response["audio"].get("path", None)
             if response.get("video"):
                 result = response.get("video")
                 return_value["status"] = result.get("status") == 1
@@ -810,6 +902,7 @@ class ZidooRC:
                 return_value["bitrate"] = result.get("bitrate")
                 return_value["audio"] = result.get("audioInfo")
                 return_value["video"] = result.get("output")
+                return_value["path"] = result.get("path")
                 if (
                     return_value["status"] is True
                     and return_value["uri"]
@@ -927,28 +1020,38 @@ class ZidooRC:
             return response
         return None
 
-    def _next_data(self, data, index: int) -> int:
-        """Toggle list."""
-        temp = iter(data)
-        for key in temp:
-            if key == index:
-                index = next(temp, 0)
-                return index
-        return 0
+    async def get_subtitle_list(self, log_errors=True) -> list[dict[str, Any]]:
+        """Async Get subtitle list.
 
-    async def get_subtitle_list(self, log_errors=True) -> dict:
+        Returns
+            dictionary list
+        """
+        response = await self._req_json("ZidooVideoPlay/getSubtitleList", log_errors=log_errors)
+        if response is not None and response.get("status") == 200:
+            return response.get("subtitles", [])
+        return []
+
+    async def get_audio_list(self, log_errors=True) -> list[dict[str, Any]]:
+        """Async Get audio list.
+
+        Returns
+            dictionary list
+        """
+        response = await self._req_json("ZidooVideoPlay/getAudioList", log_errors=log_errors)
+        if response is not None and response.get("status") == 200:
+            return response.get("subtitles", [])
+        return []
+
+    async def get_subtitle_indexes(self, log_errors=True) -> dict:
         """Async Get subtitle list.
 
         Returns
             dictionary list
         """
         return_values = {}
-        response = await self._req_json("ZidooVideoPlay/getSubtitleList", log_errors=log_errors)
-
-        if response is not None and response.get("status") == 200:
-            for result in response["subtitles"]:
-                index = result.get("index")
-                return_values[index] = result.get("title")
+        for result in await self.get_subtitle_list(log_errors):
+            index = result.get("index")
+            return_values[index] = result.get("title")
 
         return return_values
 
@@ -962,16 +1065,17 @@ class ZidooRC:
             True if successful
         """
         if index is None:
-            index = self._next_data(await self.get_subtitle_list(), self._current_subtitle)
+            index = _next_data(await self.get_subtitle_indexes(), self._current_subtitle)
 
         response = await self._req_json(f"ZidooVideoPlay/setSubtitle?index={index}", log_errors=False)
 
         if response is not None and response.get("status") == 200:
             self._current_subtitle = index
+            await self.manual_update()
             return True
         return False
 
-    async def get_audio_list(self) -> dict:
+    async def get_audio_list_indexes(self) -> dict:
         """Async Get audio track list.
 
         Returns
@@ -979,12 +1083,9 @@ class ZidooRC:
                 list of audio tracks
         """
         return_values = {}
-        response = await self._req_json("ZidooVideoPlay/getAudioList")
-
-        if response is not None and response.get("status") == 200:
-            for result in response["subtitles"]:
-                index = result.get("index")
-                return_values[index] = result.get("title")
+        for result in await self.get_audio_list():
+            index = result.get("index")
+            return_values[index] = result.get("title")
 
         return return_values
 
@@ -998,14 +1099,31 @@ class ZidooRC:
             True if successful
         """
         if index is None:
-            index = self._next_data(await self.get_audio_list(), self._current_audio)
+            index = _next_data(await self.get_audio_list_indexes(), self._current_audio)
 
         response = await self._req_json(f"ZidooVideoPlay/setAudio?index={index}", log_errors=False)
 
         if response is not None and response.get("status") == 200:
             self._current_audio = index
+            await self.manual_update()
             return True
         return False
+
+    @cmd_wrapper
+    async def select_audio_track(self, track: str) -> bool:
+        """Async Select audio track."""
+        index = _get_track_index(self._audio_tracks, track)
+        if index == -1:
+            return False
+        return await self.set_audio(index)
+
+    @cmd_wrapper
+    async def select_subtitle_track(self, track: str) -> bool:
+        """Async Select subtitle track."""
+        index = _get_track_index(self._subtitles_tracks, track)
+        if index == -1:
+            return False
+        return await self.set_subtitle(index)
 
     async def get_system_info(self, log_errors=True) -> dict | None:
         """Async Get system information.

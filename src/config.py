@@ -1,7 +1,7 @@
 """
 Configuration handling of the integration driver.
 
-:copyright: (c) 2023 by Unfolded Circle ApS.
+:copyright: (c) 2026 by Albaintor
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
@@ -13,11 +13,22 @@ from asyncio import Lock
 from dataclasses import dataclass, field, fields
 from typing import Callable, Iterator
 
-from ucapi import EntityTypes
+from ucapi import EntityTypes, Entity
+
+from const import MANUFACTURER
 
 _LOG = logging.getLogger(__name__)
 
 _CFG_FILENAME = "config.json"
+
+
+class ZidooEntity(Entity):
+    """Global entity."""
+
+    @property
+    def deviceid(self) -> str:
+        """Return the device identifier."""
+        raise NotImplementedError()
 
 
 def create_entity_id(device_id: str, entity_type: EntityTypes) -> str:
@@ -25,21 +36,9 @@ def create_entity_id(device_id: str, entity_type: EntityTypes) -> str:
     return f"{entity_type.value}.{device_id}"
 
 
-def device_from_entity_id(entity_id: str) -> str | None:
-    """
-    Return the avr_id prefix of an entity_id.
-
-    The prefix is the part before the first dot in the name and refers to the AVR device identifier.
-
-    :param entity_id: the entity identifier
-    :return: the device prefix, or None if entity_id doesn't contain a dot
-    """
-    return entity_id.split(".", 1)[1]
-
-
 @dataclass
-class DeviceInstance:
-    """Orange TV device configuration."""
+class ConfigDevice:
+    """Device configuration."""
 
     # pylint: disable = W0622
     id: str
@@ -49,6 +48,7 @@ class DeviceInstance:
     wifi_mac_address: str | None = field(default="")
     always_on: bool | None = field(default=False)
     refresh_interval: int | None = field(default=10)
+    sensor_include_device_name: bool | None = field(default=True)
 
     def __post_init__(self):
         """Apply default values on missing fields."""
@@ -59,6 +59,12 @@ class DeviceInstance:
                 and getattr(self, attribute.name) is None
             ):
                 setattr(self, attribute.name, attribute.default)
+
+    def get_device_part(self) -> str:
+        """Return the device name part to build entity names."""
+        if self.sensor_include_device_name:
+            return self.name + " " if self.name != MANUFACTURER else ""
+        return ""
 
 
 class _EnhancedJSONEncoder(json.JSONEncoder):
@@ -76,9 +82,9 @@ class Devices:
     def __init__(
         self,
         data_path: str,
-        add_handler: Callable[[DeviceInstance], None],
-        remove_handler: Callable[[DeviceInstance | None], None],
-        update_handler: Callable[[DeviceInstance], None],
+        add_handler: Callable[[ConfigDevice], None],
+        remove_handler: Callable[[ConfigDevice | None], None],
+        update_handler: Callable[[ConfigDevice], None],
     ):
         """
         Create a configuration instance for the given configuration path.
@@ -87,7 +93,7 @@ class Devices:
         """
         self._data_path: str = data_path
         self._cfg_file_path: str = os.path.join(data_path, _CFG_FILENAME)
-        self._config: list[DeviceInstance] = []
+        self._config: list[ConfigDevice] = []
         self._add_handler = add_handler
         self._remove_handler = remove_handler
         self._update_handler = update_handler
@@ -99,7 +105,7 @@ class Devices:
         """Return the configuration path."""
         return self._data_path
 
-    def all(self) -> Iterator[DeviceInstance]:
+    def all(self) -> Iterator[ConfigDevice]:
         """Get an iterator for all device configurations."""
         return iter(self._config)
 
@@ -110,7 +116,7 @@ class Devices:
                 return True
         return False
 
-    def add_or_update(self, atv: DeviceInstance) -> None:
+    def add_or_update(self, atv: ConfigDevice) -> None:
         """Add a new configured device."""
         if self.contains(atv.id):
             _LOG.debug("Existing config %s, updating it %s", atv.id, atv)
@@ -124,7 +130,7 @@ class Devices:
         if self._add_handler is not None:
             self._add_handler(atv)
 
-    def get(self, avr_id: str) -> DeviceInstance | None:
+    def get(self, avr_id: str) -> ConfigDevice | None:
         """Get device configuration for given identifier."""
         for item in self._config:
             if item.id == avr_id:
@@ -132,7 +138,7 @@ class Devices:
                 return dataclasses.replace(item)
         return None
 
-    def update(self, device_instance: DeviceInstance) -> bool:
+    def update(self, device_instance: ConfigDevice) -> bool:
         """Update a configured Sony device and persist configuration."""
         for item in self._config:
             if item.id == device_instance.id:
@@ -204,7 +210,7 @@ class Devices:
             self._config.clear()
             for item in data:
                 try:
-                    self._config.append(DeviceInstance(**item))
+                    self._config.append(ConfigDevice(**item))
                 except TypeError as ex:
                     _LOG.warning("Invalid configuration entry will be ignored: %s", ex)
 
@@ -258,7 +264,7 @@ class Devices:
                 data = json.load(f)
             for item in data:
                 try:
-                    self._config.append(DeviceInstance(**item))
+                    self._config.append(ConfigDevice(**item))
                 except TypeError as ex:
                     _LOG.warning("Invalid configuration entry will be ignored: %s", ex)
             return True
