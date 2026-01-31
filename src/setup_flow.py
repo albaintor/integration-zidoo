@@ -42,7 +42,7 @@ class SetupSteps(IntEnum):
     RECONFIGURE = 5
     BACKUP_RESTORE = 6
 
-
+# pylint: disable=C0103
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
 _reconfigured_device: ConfigDevice | None = None
