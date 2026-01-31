@@ -3,7 +3,9 @@
 Using code from [Zidoo Home Assistant component](https://github.com/wizmo2/zidoo-player)
 and [uc-integration-api](https://github.com/aitatoi/integration-python-library)
 
-The driver discovers Zidoo on the network. A media player entity is exposed to the core.
+The driver discovers Zidoo devices on the network. Multiple entities are exposed to the remote.
+
+**Media Player**
 
 Supported attributes:
 
@@ -31,6 +33,19 @@ Supported commands:
 - Info OSD
 - Audio track
 - Subtitles track
+
+**Select entities (dropdowns)**
+
+- Audio stream selection
+- Subtitle stream selection
+
+**Sensors**
+
+- Current audio stream
+- Current subtitle stream
+- Video information
+- Audio information
+
 
 Multiple instances are supported
 
