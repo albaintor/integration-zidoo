@@ -27,6 +27,7 @@ from aiohttp import ClientError, ClientOSError, ClientResponse, ClientSession, C
 from pyee.asyncio import AsyncIOEventEmitter
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import MediaType, States
+from ucapi.select import Attributes as SelectAttributes
 from yarl import URL
 
 from config import ConfigDevice
@@ -243,10 +244,13 @@ class ZidooClient:
             MediaAttr.STATE: self.state,
             MediaAttr.MEDIA_POSITION: self.media_position if self.media_position else 0,
             MediaAttr.MEDIA_DURATION: self.media_duration if self.media_duration else 0,
-            ZidooSelects.SELECT_AUDIO_STREAM: {"current_option": self.audio_track, "options": self.audio_tracks},
+            ZidooSelects.SELECT_AUDIO_STREAM: {
+                SelectAttributes.CURRENT_OPTION: self.audio_track,
+                SelectAttributes.OPTIONS: self.audio_tracks,
+            },
             ZidooSelects.SELECT_SUBTITLE_STREAM: {
-                "current_option": self.subtitle_track,
-                "options": self.subtitle_tracks,
+                SelectAttributes.CURRENT_OPTION: self.subtitle_track,
+                SelectAttributes.OPTIONS: self.subtitle_tracks,
             },
             ZidooSensors.SENSOR_AUDIO_STREAM: self.audio_track,
             ZidooSensors.SENSOR_SUBTITLE_STREAM: self.subtitle_track,
@@ -509,12 +513,12 @@ class ZidooClient:
                     self._subtitles_tracks = await self.get_subtitle_list()
                     self._audio_tracks = await self.get_audio_list()
                     updated_data[ZidooSelects.SELECT_AUDIO_STREAM] = {
-                        "options": self.audio_tracks,
-                        "current_option": self.audio_track,
+                        SelectAttributes.OPTIONS: self.audio_tracks,
+                        SelectAttributes.CURRENT_OPTION: self.audio_track,
                     }
                     updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] = {
-                        "options": self.subtitle_tracks,
-                        "current_option": self.subtitle_track,
+                        SelectAttributes.OPTIONS: self.subtitle_tracks,
+                        SelectAttributes.CURRENT_OPTION: self.subtitle_track,
                     }
                     image_url = self.generate_current_image_url()
                     if image_url != self._media_image_url:
@@ -532,13 +536,15 @@ class ZidooClient:
                 if current_subtitle != self.subtitle_track:
                     if updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] is None:
                         updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] = {}
-                    updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM]["current_option"] = self.subtitle_track
+                    updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM][
+                        SelectAttributes.CURRENT_OPTION
+                    ] = self.subtitle_track
                     updated_data[ZidooSensors.SENSOR_SUBTITLE_STREAM] = self.subtitle_track
 
                 if current_audio != self.audio_track:
                     if updated_data[ZidooSelects.SELECT_AUDIO_STREAM] is None:
                         updated_data[ZidooSelects.SELECT_AUDIO_STREAM] = {}
-                    updated_data[ZidooSelects.SELECT_AUDIO_STREAM]["current_option"] = self.audio_track
+                    updated_data[ZidooSelects.SELECT_AUDIO_STREAM][SelectAttributes.CURRENT_OPTION] = self.audio_track
                     updated_data[ZidooSensors.SENSOR_AUDIO_STREAM] = self.audio_track
 
                 if album != self.media_album_name:
