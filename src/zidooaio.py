@@ -466,8 +466,8 @@ class ZidooClient:
                 self._media_position_updated_at = datetime.now(timezone.utc)
 
                 current_media = self._current_media
-                current_audio = self.audio_track
-                current_subtitle = self.subtitle_track
+                current_audio = self._current_audio
+                current_subtitle = self._current_subtitle
                 current_video_info = self.video_info
                 current_audio_info = self.audio_info
 
@@ -533,7 +533,7 @@ class ZidooClient:
                             self._current_media,
                         )
 
-                if current_subtitle != self.subtitle_track:
+                if current_subtitle != self._current_subtitle:
                     if updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] is None:
                         updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] = {}
                     updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM][
@@ -541,7 +541,7 @@ class ZidooClient:
                     ] = self.subtitle_track
                     updated_data[ZidooSensors.SENSOR_SUBTITLE_STREAM] = self.subtitle_track
 
-                if current_audio != self.audio_track:
+                if current_audio != self._current_audio:
                     if updated_data[ZidooSelects.SELECT_AUDIO_STREAM] is None:
                         updated_data[ZidooSelects.SELECT_AUDIO_STREAM] = {}
                     updated_data[ZidooSelects.SELECT_AUDIO_STREAM][SelectAttributes.CURRENT_OPTION] = self.audio_track
@@ -918,7 +918,7 @@ class ZidooClient:
         response = await self._req_json("ZidooVideoPlay/" + ZCMD_STATUS, log_errors=False, timeout=TIMEOUT_INFO)
 
         if response is not None and response.get("status") == 200:
-            # _LOGGER.debug("[%s] Playback info %s", self._device_config.address, response)
+            _LOGGER.debug("[%s] Playback info %s", self._device_config.address, response)
             if response.get("subtitle"):
                 self._current_subtitle = response["subtitle"].get("index")
             if response.get("audio"):
@@ -1106,6 +1106,13 @@ class ZidooClient:
 
         if response is not None and response.get("status") == 200:
             self._current_subtitle = index
+            updated_data: dict[str, Any] = {
+                ZidooSelects.SELECT_SUBTITLE_STREAM: {
+                    SelectAttributes.CURRENT_OPTION: self.subtitle_track,
+                },
+                ZidooSensors.SENSOR_SUBTITLE_STREAM: self.subtitle_track,
+            }
+            self.events.emit(Events.UPDATE, self.id, updated_data)
             await self.manual_update()
             return True
         return False
@@ -1140,6 +1147,14 @@ class ZidooClient:
 
         if response is not None and response.get("status") == 200:
             self._current_audio = index
+            updated_data: dict[str, Any] = {
+                ZidooSelects.SELECT_AUDIO_STREAM: {
+                    SelectAttributes.CURRENT_OPTION: self.audio_track,
+                },
+                ZidooSensors.SENSOR_AUDIO_STREAM: self.audio_track,
+                ZidooSensors.SENSOR_AUDIO_INFO: self.audio_info,
+            }
+            self.events.emit(Events.UPDATE, self.id, updated_data)
             await self.manual_update()
             return True
         return False
