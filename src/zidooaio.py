@@ -25,6 +25,8 @@ from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, 
 import ucapi
 from aiohttp import ClientError, ClientOSError, ClientResponse, ClientSession, CookieJar
 from pyee.asyncio import AsyncIOEventEmitter
+from ucapi import IntegrationAPI
+from ucapi.api_definitions import LocalizationCfg
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import MediaType, States
 from ucapi.select import Attributes as SelectAttributes
@@ -180,6 +182,7 @@ class ZidooClient:
         psk: str = None,
         mac: str = None,
         loop: AbstractEventLoop | None = None,
+        api: IntegrationAPI | None = None,
     ) -> None:
         """Initialize the Zidoo class.
 
@@ -231,6 +234,8 @@ class ZidooClient:
         self._current_media: str | None = None
         self._audio_tracks: list[dict[str, Any]] = []
         self._subtitles_tracks: list[dict[str, Any]] = []
+        self._localization: LocalizationCfg | None = None
+        self._api = api
 
     @property
     def state(self) -> States:
@@ -414,6 +419,16 @@ class ZidooClient:
             for key in sources:
                 self._source_list.append(key)
 
+    async def update_localization(self):
+        if self._api is None:
+            _LOGGER.debug("[%s] Can't update localization, api instance is not provided", self._device_config.address)
+            return
+        try:
+            self._localization = await self._api.get_localization_cfg()
+            _LOGGER.debug("[%s] Localization extracted %s", self._device_config.address, self._localization)
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     @debounce(2)
     async def manual_update(self):
         """Manual update method debounced.
@@ -447,6 +462,10 @@ class ZidooClient:
         # Retrieve the latest data.
         state = States.OFF
         media_type = MediaType.VIDEO
+
+        if self._localization is None:
+            asyncio.create_task(self.update_localization())
+
         try:
             if self.is_connected():
                 state = States.PAUSED

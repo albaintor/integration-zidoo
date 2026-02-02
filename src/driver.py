@@ -10,6 +10,8 @@ import asyncio
 import logging
 import os
 import sys
+
+# sys.path.insert(0, os.path.abspath("../integration-python-library"))
 from enum import Enum
 from typing import Any, Type
 
@@ -43,7 +45,7 @@ _remote_in_standby = False
 async def on_connect_cmd() -> None:
     """Connect all configured receivers when the Remote Two sends the connect command."""
     # TODO check if we were in standby and ignore the call? We'll also get an EXIT_STANDBY
-    _LOG.debug("R2 connect command: connecting device(s)")
+    _LOG.debug("Remote connect command: connecting device(s)")
     for device in _configured_devices.values():
         # start background task
         await device.connect()
@@ -304,7 +306,7 @@ def _configure_new_device(device_config: config.ConfigDevice, connect: bool = Tr
         asyncio.create_task(device.disconnect())
         device.update_config(device_config)
     else:
-        device = ZidooClient(device_config)
+        device = ZidooClient(device_config, api=api)
         # device.events.on(zidooaio.Events.CONNECTED, on_device_connected)
         device.events.on(zidooaio.Events.ERROR, on_device_connection_error)
         device.events.on(zidooaio.Events.UPDATE, on_device_update)

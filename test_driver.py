@@ -179,7 +179,6 @@ class RemoteWebsocket:
             _LOG.debug("receive: %s", raw_msg)
             if raw_msg.type is not WSMsgType.TEXT:
                 break
-
             self._process_text_message(raw_msg.data)
 
     async def _handle_auth(self):
