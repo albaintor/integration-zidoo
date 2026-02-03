@@ -52,7 +52,7 @@ from const import (
     ZidooSelects,
     ZidooSensors,
 )
-from languages import LANGUAGES_KEYS, LANGUAGES
+from languages import LANGUAGES, LANGUAGES_KEYS
 
 SCAN_INTERVAL = timedelta(seconds=10)
 SCAN_INTERVAL_RAPID = timedelta(seconds=1)
@@ -190,6 +190,7 @@ def _get_track_index(data: list[dict[str, Any]], track_name: str, language_code:
 class ZidooClient:
     """Zidoo Media Player Remote Control."""
 
+    # pylint: disable = R0917
     def __init__(
         self,
         device_config: ConfigDevice | None = None,
@@ -447,6 +448,7 @@ class ZidooClient:
                 self._source_list.append(key)
 
     async def update_localization(self):
+        """Extract localization information."""
         if self._api is None:
             _LOGGER.debug("[%s] Can't update localization, api instance is not provided", self._device_config.address)
             return

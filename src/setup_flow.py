@@ -12,6 +12,7 @@ from enum import IntEnum
 from ucapi import (
     AbortDriverSetup,
     DriverSetupRequest,
+    IntegrationAPI,
     IntegrationSetupError,
     RequestUserInput,
     SetupAction,
@@ -19,7 +20,6 @@ from ucapi import (
     SetupDriver,
     SetupError,
     UserDataResponse,
-    IntegrationAPI,
 )
 
 import config
