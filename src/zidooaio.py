@@ -175,7 +175,6 @@ def _get_language_name(lang: str, app_language="en_US") -> str:
 
 def _build_track_name(track: dict[str, Any], language_code: str) -> str:
     """Build track name."""
-
     return track.get("title", _get_language_name(track.get("laungaue", ""), language_code))
 
 
