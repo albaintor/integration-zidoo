@@ -26,7 +26,6 @@ import ucapi
 from aiohttp import ClientError, ClientOSError, ClientResponse, ClientSession, CookieJar
 from pyee.asyncio import AsyncIOEventEmitter
 from ucapi import IntegrationAPI
-from ucapi.api_definitions import LocalizationCfg
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import MediaType, States
 from ucapi.select import Attributes as SelectAttributes
@@ -53,6 +52,7 @@ from const import (
     ZidooSelects,
     ZidooSensors,
 )
+from languages import LANGUAGES_KEYS, LANGUAGES
 
 SCAN_INTERVAL = timedelta(seconds=10)
 SCAN_INTERVAL_RAPID = timedelta(seconds=1)
@@ -160,14 +160,28 @@ def _next_data(data, index: int) -> int:
     return 0
 
 
-def _build_track_name(track: dict[str, Any]) -> str:
+def _get_language_name(lang: str, app_language="en_US") -> str:
+    """Retrieve language name from language code."""
+    if lang == "":
+        return lang
+    app_language_code = LANGUAGES_KEYS.get(app_language, None)
+    if app_language_code is None:
+        app_language_code = "en"
+    stream_language = LANGUAGES.get(lang, None)
+    if stream_language is None:
+        return lang
+    return stream_language.get(app_language_code, stream_language.get("en", lang))
+
+
+def _build_track_name(track: dict[str, Any], language_code: str) -> str:
     """Build track name."""
-    return track.get("title", track.get("laungaue", ""))
+
+    return track.get("title", _get_language_name(track.get("laungaue", ""), language_code))
 
 
-def _get_track_index(data: list[dict[str, Any]], track_name: str) -> int:
+def _get_track_index(data: list[dict[str, Any]], track_name: str, language_code: str) -> int:
     """Get track index."""
-    result = [x for x in data if _build_track_name(x) == track_name]
+    result = [x for x in data if _build_track_name(x, language_code) == track_name]
     if result:
         return result[0].get("index", -1)
     return -1
@@ -234,7 +248,7 @@ class ZidooClient:
         self._current_media: str | None = None
         self._audio_tracks: list[dict[str, Any]] = []
         self._subtitles_tracks: list[dict[str, Any]] = []
-        self._localization: LocalizationCfg | None = None
+        self._localization: dict[str, Any] | None = None
         self._api = api
 
     @property
@@ -366,17 +380,21 @@ class ZidooClient:
     @property
     def subtitle_tracks(self) -> list[str]:
         """List of subtitle tracks."""
-        return [_build_track_name(x) for x in self._subtitles_tracks]
+        return [_build_track_name(x, self.language_code) for x in self._subtitles_tracks]
 
     @property
     def audio_tracks(self) -> list[str]:
         """List of subtitle tracks."""
-        return [_build_track_name(x) for x in self._audio_tracks]
+        return [_build_track_name(x, self.language_code) for x in self._audio_tracks]
 
     @property
     def subtitle_track(self) -> str:
         """Current subtitle track."""
-        result = [_build_track_name(x) for x in self._subtitles_tracks if x.get("index", -1) == self._current_subtitle]
+        result = [
+            _build_track_name(x, self.language_code)
+            for x in self._subtitles_tracks
+            if x.get("index", -1) == self._current_subtitle
+        ]
         if result:
             return result[0]
         return ""
@@ -384,7 +402,11 @@ class ZidooClient:
     @property
     def audio_track(self) -> str:
         """Current audio track."""
-        result = [_build_track_name(x) for x in self._audio_tracks if x.get("index", -1) == self._current_audio]
+        result = [
+            _build_track_name(x, self.language_code)
+            for x in self._audio_tracks
+            if x.get("index", -1) == self._current_audio
+        ]
         if result:
             return result[0]
         return ""
@@ -398,6 +420,11 @@ class ZidooClient:
     def audio_info(self) -> str:
         """Return audio info."""
         return self._media_info.get("audio", "")
+
+    @property
+    def language_code(self) -> str:
+        """Return language code."""
+        return self._localization.get("language_code", "en_US") if self._localization else "en_US"
 
     def update_config(self, device_config: ConfigDevice):
         """Update existing configuration."""
@@ -531,6 +558,7 @@ class ZidooClient:
                     updated_data[MediaAttr.MEDIA_TITLE] = self.media_title
                     self._subtitles_tracks = await self.get_subtitle_list()
                     self._audio_tracks = await self.get_audio_list()
+                    _LOGGER.debug("Audio tracks : %s, subtitle tracks : %s", self._audio_tracks, self._subtitles_tracks)
                     updated_data[ZidooSelects.SELECT_AUDIO_STREAM] = {
                         SelectAttributes.OPTIONS: self.audio_tracks,
                         SelectAttributes.CURRENT_OPTION: self.audio_track,
@@ -581,7 +609,8 @@ class ZidooClient:
             if media_type != self._media_type:
                 self._media_type = media_type
                 updated_data[MediaAttr.MEDIA_TYPE] = self._media_type
-        except Exception:  # pylint: disable=broad-except
+        except Exception as ex:  # pylint: disable=broad-except
+            _LOGGER.error("[%s] Error while updating data %s", self._device_config.address, ex)
             self._update_lock.release()
             return
         self._update_lock.release()
@@ -1181,7 +1210,7 @@ class ZidooClient:
     @cmd_wrapper
     async def select_audio_track(self, track: str) -> bool:
         """Async Select audio track."""
-        index = _get_track_index(self._audio_tracks, track)
+        index = _get_track_index(self._audio_tracks, track, self.language_code)
         if index == -1:
             return False
         return await self.set_audio(index)
@@ -1189,7 +1218,7 @@ class ZidooClient:
     @cmd_wrapper
     async def select_subtitle_track(self, track: str) -> bool:
         """Async Select subtitle track."""
-        index = _get_track_index(self._subtitles_tracks, track)
+        index = _get_track_index(self._subtitles_tracks, track, self.language_code)
         if index == -1:
             return False
         return await self.set_subtitle(index)

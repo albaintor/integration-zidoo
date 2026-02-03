@@ -32,6 +32,22 @@ from PIL import Image, ImageTk
 from pyee.asyncio import AsyncIOEventEmitter
 from rich import print_json
 
+# localization_cfg = {
+#     "country_code": "EN",
+#     "language_code": "en_US",
+#     "measurement_unit": "METRIC",
+#     "time_format_24h": True,
+#     "time_zone": "Europe/Paris",
+# }
+
+localization_cfg = {
+    "country_code": "FR",
+    "language_code": "fr_FR",
+    "measurement_unit": "METRIC",
+    "time_format_24h": True,
+    "time_zone": "Europe/Paris",
+}
+
 
 class Events(StrEnum):
     """Internal events."""
@@ -240,13 +256,50 @@ class RemoteWebsocket:
                     "req_id": req_id,
                     "code": 200,
                     "msg": "localization_cfg",
-                    "msg_data": {
-                        "country_code": "EN",
-                        "language_code": "en_US",
-                        "measurement_unit": "METRIC",
-                        "time_format_24h": True,
-                        "time_zone": "Europe/Paris",
-                    },
+                    "msg_data": localization_cfg,
+                }
+            )
+        elif msg_type == "get_driver_metadata":
+            # {"id":2,"kind":"req","msg":"get_driver_metadata"}
+            with open("driver.json", "r") as file:
+                file_content = json.load(file)
+                await self._send_json(
+                    {
+                        "kind": "resp",
+                        "req_id": req_id,
+                        "code": 200,
+                        "msg": "driver_metadata",
+                        "msg_data": json.dumps(file_content),
+                    }
+                )
+
+        elif msg_type == "setup_driver":
+            # {"kind":"req","id":3,"msg":"setup_driver","msg_data":{"reconfigure":false,"setup_data":{}}}
+            await self._send_json(
+                {
+                    "kind": "resp",
+                    "req_id": req_id,
+                    "code": 200,
+                    "msg": "result",
+                    "msg_data": {},
+                }
+            )
+            await asyncio.sleep(1)
+            await self._send_json(
+                {
+                    "kind": "event",
+                    "msg": "driver_setup_change",
+                    "msg_data": {"event_type": "SETUP", "state": "SETUP"},
+                    "cat": "DEVICE",
+                }
+            )
+            await asyncio.sleep(1)
+            await self._send_json(
+                {
+                    "kind": "event",
+                    "msg": "driver_setup_change",
+                    "msg_data": {"event_type": "SETUP", "state": "OK"},
+                    "cat": "DEVICE",
                 }
             )
         else:

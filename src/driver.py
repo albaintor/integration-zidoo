@@ -410,7 +410,7 @@ async def main():
             continue
         _LOOP.create_task(device.update())
 
-    await api.init("driver.json", setup_flow.driver_setup_handler)
+    await api.init("driver.json", setup_flow.SetupFlow(api).driver_setup_handler)
 
 
 if __name__ == "__main__":
