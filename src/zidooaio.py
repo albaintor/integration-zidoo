@@ -29,6 +29,7 @@ from ucapi import IntegrationAPI
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import MediaType, States
 from ucapi.select import Attributes as SelectAttributes
+from ucapi.select import States as SelectStates
 from yarl import URL
 
 from config import ConfigDevice
@@ -268,10 +269,12 @@ class ZidooClient:
             ZidooSelects.SELECT_AUDIO_STREAM: {
                 SelectAttributes.CURRENT_OPTION: self.audio_track,
                 SelectAttributes.OPTIONS: self.audio_tracks,
+                SelectAttributes.STATE: SelectStates.ON,
             },
             ZidooSelects.SELECT_SUBTITLE_STREAM: {
                 SelectAttributes.CURRENT_OPTION: self.subtitle_track,
                 SelectAttributes.OPTIONS: self.subtitle_tracks,
+                SelectAttributes.STATE: SelectStates.ON,
             },
             ZidooSensors.SENSOR_AUDIO_STREAM: self.audio_track,
             ZidooSensors.SENSOR_SUBTITLE_STREAM: self.subtitle_track,
