@@ -1,11 +1,51 @@
 """Constants for Zidoo component."""
 
+import dataclasses
 import logging
+from dataclasses import dataclass, field, fields
 from enum import Enum, StrEnum
 
-from ucapi.media_player import MediaType
+from ucapi.media_player import MediaClass, MediaContent
 
 _LOGGER = logging.getLogger(__package__)
+
+
+@dataclass
+class BrowseMediaItem:
+    """Media item object."""
+
+    title: str
+    media_class: str
+    media_type: str
+    media_id: str
+    can_browse: bool = field(default=False)
+    can_play: bool = field(default=False)
+    can_search: bool = field(default=False)
+    artist: str | None = field(default=None)
+    album: str | None = field(default=None)
+    thumbnail: str | None = field(default=None)
+    duration: int | None = field(default=None)
+    items: list["BrowseMediaItem"] | None = field(default=None)
+
+    # pylint: disable=R0801
+    def __post_init__(self):
+        """Apply default values on missing fields."""
+        for attribute in fields(self):
+            # If there is a default and the value of the field is none we can assign a value
+            if (
+                not isinstance(attribute.default, dataclasses.MISSING.__class__)
+                and getattr(self, attribute.name) is None
+            ):
+                setattr(self, attribute.name, attribute.default)
+
+
+@dataclass
+class MediaSearchFilter:
+    """Search filter for search media command."""
+
+    media_classes: list[str] | None
+    artist: str | None
+    album: str | None
 
 
 class ZidooSensors(str, Enum):
@@ -51,32 +91,107 @@ EVENT_TURN_OFF = "zidoo.turn_off"
 
 MEDIA_TYPE_FILE = "file"
 
-ZSHORTCUTS = [
-    {"name": "FAVORITES", "path": "favorite", "type": MediaType.VIDEO},
-    {"name": "LATEST", "path": "recent", "type": MediaType.VIDEO, "default": True},
-    {"name": "WATCHING", "path": "watching", "type": MediaType.VIDEO},
-    {"name": "SD", "path": "sd", "type": MediaType.VIDEO},
-    {"name": "DISC", "path": "bluray", "type": MediaType.VIDEO},
-    {"name": "UHD", "path": "4k", "type": MediaType.VIDEO},
-    {"name": "3D", "path": "3d", "type": MediaType.VIDEO},
-    {"name": "KIDS", "path": "children", "type": MediaType.VIDEO},
-    {"name": "UNWATCHED", "path": "unwatched", "type": MediaType.VIDEO},
-    {"name": "OTHER", "path": "other", "type": MediaType.VIDEO},
-    {"name": "ALL", "path": "all", "type": MediaType.VIDEO},
-    {"name": "MOVIES", "path": "movie", "type": MediaType.MOVIE, "default": True},
-    {"name": "TV SHOWS", "path": "tvshow", "type": MediaType.TVSHOW, "default": True},
-    {"name": "MUSIC", "path": "music", "type": MediaType.MUSIC, "default": True},
-    {"name": "ALBUMS", "path": "album", "type": MediaType.MUSIC},
-    {"name": "ARTISTS", "path": "artist", "type": MediaType.MUSIC},
-    {"name": "PLAYLISTS", "path": "playlist", "type": MediaType.MUSIC},
+
+@dataclass
+class MediaEntry:
+    """Media entry for browsing media."""
+
+    title: str
+    media_id: str
+    media_type: MediaContent | str
+    media_class: MediaClass | None = field(default=None)
+
+    def __post_init__(self):
+        """Apply default values on missing fields."""
+        for attribute in fields(self):
+            # If there is a default and the value of the field is none we can assign a value
+            if (
+                not isinstance(attribute.default, dataclasses.MISSING.__class__)
+                and getattr(self, attribute.name) is None
+            ):
+                setattr(self, attribute.name, attribute.default)
+
+
+class ZidooUrls(str, Enum):
+    """Predefined urls."""
+
+    ALL = "zidoo://videos/all"
+    FAVORITES = "zidoo://videos/favorites"
+    WATCHING = "zidoo://videos/watching"
+    MOVIE = "zidoo://videos/movies"
+    TV_SHOW = "zidoo://videos/tvshows"
+    SD = "zidoo://videos/sd"
+    BLURAY = "zidoo://videos/bluray"
+    UHD = "zidoo://videos/4k"
+    VIDEO_3D = "zidoo://videos/3d"
+    CHILDREN = "zidoo://videos/children"
+    RECENT = "zidoo://videos/recent"
+    UNWATCHED = "zidoo://videos/unwatched"
+    OTHER = "zidoo://videos/other"
+    MUSIC = "zidoo://music/songs"
+    ALBUM = "zidoo://music/albums"
+    ARTIST = "zidoo://music/artists"
+    PLAYLIST = "zidoo://music/playlists"
+    FILES = "zidoo://files/main"
+    SHARES = "zidoo://files/share"
+
+
+# Movie Player search keys
+ZVIDEO_FILTER_TYPES: dict[ZidooUrls, int] = {
+    ZidooUrls.ALL: 0,
+    ZidooUrls.FAVORITES: 1,
+    ZidooUrls.WATCHING: 2,
+    ZidooUrls.MOVIE: 3,
+    ZidooUrls.TV_SHOW: 4,
+    ZidooUrls.SD: 5,
+    ZidooUrls.BLURAY: 6,
+    ZidooUrls.UHD: 7,
+    ZidooUrls.VIDEO_3D: 8,
+    ZidooUrls.CHILDREN: 9,
+    ZidooUrls.RECENT: 10,
+    ZidooUrls.UNWATCHED: 11,
+    ZidooUrls.OTHER: 12,
+    # ?"dolby": 13
+}
+
+ZIDOO_MEDIA_ENTRIES: list[MediaEntry] = [
+    MediaEntry(title="Favorites", media_id=ZidooUrls.FAVORITES.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="Latest", media_id=ZidooUrls.RECENT.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="Watching", media_id=ZidooUrls.WATCHING.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="SD", media_id=ZidooUrls.SD.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="Disc", media_id=ZidooUrls.BLURAY.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="UHD", media_id=ZidooUrls.UHD.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="3D", media_id=ZidooUrls.VIDEO_3D.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="Kids", media_id=ZidooUrls.CHILDREN.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="Unwatched", media_id=ZidooUrls.UNWATCHED.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="Other", media_id=ZidooUrls.OTHER.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="All", media_id=ZidooUrls.ALL.value, media_type=MediaContent.VIDEO),
+    MediaEntry(title="Movies", media_id=ZidooUrls.MOVIE.value, media_type=MediaContent.MOVIE),
+    MediaEntry(title="TV Shows", media_id=ZidooUrls.TV_SHOW.value, media_type=MediaContent.TV_SHOW),
+    MediaEntry(title="Music", media_id=ZidooUrls.MUSIC.value, media_type=MediaContent.MUSIC),
+    MediaEntry(title="Albums", media_id=ZidooUrls.ALBUM.value, media_type=MediaContent.ALBUM),
+    MediaEntry(title="Artists", media_id=ZidooUrls.ARTIST.value, media_type=MediaContent.ARTIST),
+    MediaEntry(title="Playlists", media_id=ZidooUrls.PLAYLIST.value, media_type=MediaContent.PLAYLIST),
+    MediaEntry(title="Files", media_id=ZidooUrls.FILES.value, media_type=MediaContent.URL),
+    MediaEntry(title="Network files", media_id=ZidooUrls.SHARES.value, media_type=MediaContent.URL),
 ]
-ZDEFAULT_SHORTCUTS = ["recent", "movie", "tvshow"]
+
+ZDEFAULT_SHORTCUTS = [
+    ZidooUrls.WATCHING.value,
+    ZidooUrls.ALL.value,
+    ZidooUrls.RECENT.value,
+    ZidooUrls.MOVIE.value,
+    ZidooUrls.TV_SHOW.value,
+    ZidooUrls.ALBUM.value,
+    ZidooUrls.ARTIST.value,
+    ZidooUrls.MUSIC.value,
+]
 
 
-ZCONTENT_ITEM_TYPE = {
-    0: MEDIA_TYPE_FILE,  # folder
-    1: MediaType.MUSIC,  # music
-    2: MediaType.VIDEO,  # video
+ZCONTENT_ITEM_TYPE: dict[int, MediaContent] = {
+    0: MediaContent.URL,  # folder
+    1: MediaContent.MUSIC,  # music
+    2: MediaContent.VIDEO,  # video
     # 3: MediaType.IMAGE,  # image
     # 4: 'text',
     # 5: 'apk',
@@ -87,16 +202,47 @@ ZCONTENT_ITEM_TYPE = {
     # 10: 'web',
     # 11: 'archive' ,
     # 12: 'other'
-    1000: MEDIA_TYPE_FILE,  # hhd
-    1001: MEDIA_TYPE_FILE,  # usb
-    1002: MEDIA_TYPE_FILE,  # usb
-    1003: MEDIA_TYPE_FILE,  # tf
-    # 1004: MediaType.URL,  # nfs
-    # 1005: MediaType.URL,  # smb
-    1006: MEDIA_TYPE_FILE,
-    1007: MEDIA_TYPE_FILE,
-    1008: MEDIA_TYPE_FILE,
+    1000: MediaContent.URL,  # hhd
+    1001: MediaContent.URL,  # usb
+    1002: MediaContent.URL,  # usb
+    1003: MediaContent.URL,  # tf
+    # 1004: MediaContent.URL,  # nfs
+    # 1005: MediaContent.URL,  # smb
+    1006: MediaContent.URL,
+    1007: MediaContent.URL,
+    1008: MediaContent.URL,
 }
+
+ZCONTENT_ITEM_CLASS: dict[MediaContent, MediaClass] = {
+    MediaContent.URL: MediaClass.DIRECTORY,
+    MediaContent.MUSIC: MediaClass.MUSIC,
+    MediaContent.VIDEO: MediaClass.VIDEO,
+}
+
+# ZCONTENT_ITEM_CLASS = {
+#     0: MediaClass.DIRECTORY,  # folder
+#     1: MediaClass.MUSIC,  # music
+#     2: MediaClass.VIDEO,  # video
+#     3: MediaClass.IMAGE,  # image
+#     # 4: 'text',
+#     # 5: 'apk',
+#     # 6: 'pdf',
+#     # 7: 'document',
+#     # 8: 'spreadsheet',
+#     # 9: 'presentation',
+#     # 10: 'web',
+#     # 11: 'archive' ,
+#     # 12: 'other'
+#     1000: MediaClass.DIRECTORY,  # hhd
+#     1001: MediaClass.DIRECTORY,  # usb
+#     1002: MediaClass.DIRECTORY,  # usb
+#     1003: MediaClass.DIRECTORY,  # tf
+#     # 1004: MediaContent.URL,  # nfs
+#     # 1005: MediaContent.URL,  # smb
+#     1006: MediaClass.DIRECTORY,
+#     1007: MediaClass.DIRECTORY,
+#     1008: MediaClass.DIRECTORY,
+# }
 
 # ZTYPE_MEDIA_CLASS = {
 #     ZTYPE_VIDEO: MediaClass.VIDEO,
@@ -188,55 +334,19 @@ class ZKEYS(StrEnum):
     ZKEY_APP_SWITCH = "Key.APP.Switch"
 
 
-# Movie Player entry types
-ZTYPE_VIDEO = 0
-ZTYPE_MOVIE = 1
-ZTYPE_COLLECTION = 2
-ZTYPE_TV_SHOW = 3
-ZTYPE_TV_SEASON = 4
-ZTYPE_TV_EPISODE = 5
-ZTYPE_OTHER = 6
-ZTYPE_NAMES = {
-    ZTYPE_VIDEO: "video",
-    ZTYPE_MOVIE: "movie",
-    ZTYPE_COLLECTION: "collection",
-    ZTYPE_TV_SHOW: "tvshow",
-    ZTYPE_TV_SEASON: "tvseason",
-    ZTYPE_TV_EPISODE: "tvepisode",
-    ZTYPE_OTHER: "other",
-}
-
 ZCONTENT_VIDEO = "Video Player"
 ZCONTENT_MUSIC = "Music Player"
 ZCONTENT_NONE = None
 
-"""Movie Player search keys"""
-ZVIDEO_FILTER_TYPES = {
-    "all": 0,
-    "favorite": 1,
-    "watching": 2,
-    "movie": 3,
-    "tvshow": 4,
-    "sd": 5,
-    "bluray": 6,
-    "4k": 7,
-    "3d": 8,
-    "children": 9,
-    "recent": 10,
-    "unwatched": 11,
-    "other": 12,
-    # ?"dolby": 13
-}
-
 ZVIDEO_SEARCH_TYPES = {
     # "all": -1,    # combined results
-    "video": 0,  # all movies tvshows and collections
-    "movie": 1,
-    "tvshow": 2,
-    "collection": 3,
+    MediaContent.VIDEO: 0,  # all movies tvshows and collections
+    MediaContent.MOVIE: 1,
+    MediaContent.TV_SHOW: 2,
+    MediaContent.PLAYLIST: 3,
 }
 
-ZMUSIC_SEARCH_TYPES = {"music": 0, "album": 1, "artist": 2, "playlist": 3}
+ZMUSIC_SEARCH_TYPES = {MediaContent.MUSIC: 0, MediaContent.ALBUM: 1, MediaContent.ARTIST: 2, MediaContent.PLAYLIST: 3}
 
 """File System devicce type names"""
 ZDEVICE_FOLDER = 1000
@@ -249,21 +359,21 @@ ZDEVICE_NAMES = {
     1005: "smb",
 }
 
-ZFILETYPE_NAMES = {
-    0: "folder",
-    1: "music",
-    2: "movie",
-    3: "Image",
-    4: "txt",
-    5: "apk",
-    6: "pdf",
-    7: "doc",
-    8: "xls",
-    9: "ppt",
-    10: "web",
-    11: "zip",
-    # default: "other",
-}
+# ZFILETYPE_NAMES = {
+#     0: "folder",
+#     1: "music",
+#     2: "movie",
+#     3: "Image",
+#     4: "txt",
+#     5: "apk",
+#     6: "pdf",
+#     7: "doc",
+#     8: "xls",
+#     9: "ppt",
+#     10: "web",
+#     11: "zip",
+#     # default: "other",
+# }
 
 ZTYPE_MIMETYPE = {
     "image": 3,

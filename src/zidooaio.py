@@ -21,13 +21,14 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from functools import wraps
 from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
+from urllib.parse import quote, unquote
 
 import ucapi
 from aiohttp import ClientError, ClientOSError, ClientResponse, ClientSession, CookieJar
 from pyee.asyncio import AsyncIOEventEmitter
-from ucapi import IntegrationAPI
+from ucapi import IntegrationAPI, StatusCodes
 from ucapi.media_player import Attributes as MediaAttr
-from ucapi.media_player import MediaType, States
+from ucapi.media_player import MediaClass, MediaContent, States
 from ucapi.select import Attributes as SelectAttributes
 from ucapi.select import States as SelectStates
 from yarl import URL
@@ -35,13 +36,14 @@ from yarl import URL
 from config import ConfigDevice
 from const import (
     ZCMD_STATUS,
+    ZCONTENT_ITEM_CLASS,
+    ZCONTENT_ITEM_TYPE,
     ZCONTENT_MUSIC,
     ZCONTENT_NONE,
     ZCONTENT_VIDEO,
+    ZDEFAULT_SHORTCUTS,
+    ZIDOO_MEDIA_ENTRIES,
     ZKEYS,
-    ZMEDIA_TYPE_ALBUM,
-    ZMEDIA_TYPE_ARTIST,
-    ZMEDIA_TYPE_PLAYLIST,
     ZMUSIC_IMAGETARGET,
     ZMUSIC_IMAGETYPE,
     ZMUSIC_PLAYLISTTYPE,
@@ -50,10 +52,14 @@ from const import (
     ZUPNP_SERVERNAME,
     ZVIDEO_FILTER_TYPES,
     ZVIDEO_SEARCH_TYPES,
+    BrowseMediaItem,
+    MediaEntry,
     ZidooSelects,
     ZidooSensors,
+    ZidooUrls,
 )
 from languages import LANGUAGES, LANGUAGES_KEYS
+from translations import TRANSLATIONS
 
 SCAN_INTERVAL = timedelta(seconds=10)
 SCAN_INTERVAL_RAPID = timedelta(seconds=1)
@@ -61,6 +67,9 @@ CONNECTION_RETRIES = 10
 CONNECT_LOCK_TIMEOUT = 20
 REFRESH_INTERVAL = 10
 ERROR_OS_WAIT = 0.5
+THUMBNAIL_WIDTH = 300
+THUMBNAIL_HEIGHT = 200
+DEVICES_REFRESH = 10 * 60
 
 # pylint: disable = C0302
 
@@ -86,6 +95,41 @@ RETRIES = 3  # default retries
 CONF_PORT = 9529  # default api port
 DEFAULT_COUNT = 250  # default list limit
 UPDATE_LOCK_TIMEOUT = 10.0
+
+
+def is_internal_url(media_id: str | None) -> bool:
+    """Returns true if internal library URL."""
+    return media_id is not None and media_id.startswith("zidoo://")
+
+
+def get_media_entry(media_id: str | None) -> MediaEntry | None:
+    """Find matching media entry."""
+    if media_id is None:
+        return None
+    for entry in ZIDOO_MEDIA_ENTRIES:
+        if media_id.startswith(entry.media_id):
+            return entry
+    return None
+
+
+def to_data_list(response: dict[str, Any] | None) -> dict[str, Any] | None:
+    """converts the serach response to a data list"""
+    data_list = []
+    if response and response.get("all"):
+        for item in response["all"]:
+            data_list.append(item["aggregation"])
+    elif response and response.get("tvs"):
+        for item in response["tvs"]:
+            data_list.append(item["aggregation"])
+    elif response and response.get("movies"):
+        for item in response["movies"]:
+            data_list.append(item["aggregation"])
+    elif response and response.get("collections"):
+        for item in response["collections"]:
+            data_list.append(item["aggregation"])
+    if len(data_list) > 0:
+        return {"name": response["key"], "data": data_list}
+    return None
 
 
 _ZidooDeviceT = TypeVar("_ZidooDeviceT", bound="ZidooClient")
@@ -217,7 +261,7 @@ class ZidooClient:
         self._event_loop = loop or asyncio.get_running_loop()
         self.events = AsyncIOEventEmitter(self._event_loop)
         self._source_list: list[str] | None = None
-        self._media_type: MediaType | None = None
+        self._media_type: MediaContent | None = None
         self._host = f"{self._device_config.address}:{CONF_PORT}"
         self._psk = psk
         self._session = None
@@ -253,6 +297,10 @@ class ZidooClient:
         self._subtitles_tracks: list[dict[str, Any]] = []
         self._localization: dict[str, Any] | None = None
         self._api = api
+        self._browsing_shortcuts = ZDEFAULT_SHORTCUTS
+        self._devices_update_timestamp = 0
+        self._devices: dict[str, Any] | None = None
+        self._media_id: str | None = None
 
     @property
     def state(self) -> States:
@@ -431,6 +479,11 @@ class ZidooClient:
         """Return language code."""
         return self._localization.get("language_code", "en_US") if self._localization else "en_US"
 
+    @property
+    def language(self) -> str:
+        """Return simplified language code."""
+        return self.language_code.split("_", maxsplit=1)[0]
+
     def update_config(self, device_config: ConfigDevice):
         """Update existing configuration."""
         self._device_config = device_config
@@ -457,7 +510,8 @@ class ZidooClient:
             _LOGGER.debug("[%s] Can't update localization, api instance is not provided", self._device_config.address)
             return
         try:
-            self._localization = await self._api.get_localization_cfg()
+            # TODO hack, to be improved on UCAPI
+            self._localization = await self._api.get_localization_cfg(list(self._api.clients)[0])
             _LOGGER.debug("[%s] Localization extracted %s", self._device_config.address, self._localization)
         except Exception:  # pylint: disable=broad-except
             pass
@@ -494,7 +548,7 @@ class ZidooClient:
         updated_data = {}
         # Retrieve the latest data.
         state = States.OFF
-        media_type = MediaType.VIDEO
+        media_type = MediaContent.VIDEO
 
         if self._localization is None:
             asyncio.create_task(self.update_localization())
@@ -527,7 +581,7 @@ class ZidooClient:
                 playing_info = await self.get_playing_info()
                 if playing_info is None or not playing_info:
                     # self._media_type = MediaType.APP # None
-                    media_type = MediaType.VIDEO
+                    media_type = MediaContent.VIDEO
                     state = States.ON
                     self._current_media = None
                 else:
@@ -539,18 +593,21 @@ class ZidooClient:
                             state = States.PLAYING
                     mediatype = playing_info.get("source")
                     if mediatype and mediatype is not None:
+                        if self._media_id != self._current_media:
+                            self._media_id = self._current_media
+                            updated_data["media_id"] = self._current_media
                         if mediatype == "video":
                             item_type = self._media_info.get("type")
                             if item_type is not None and item_type == "tv":
-                                media_type = MediaType.TVSHOW
+                                media_type = MediaContent.TV_SHOW
                             else:
-                                media_type = MediaType.MOVIE
+                                media_type = MediaContent.MOVIE
                             self._current_source = ZCONTENT_VIDEO
                         else:
-                            media_type = MediaType.MUSIC
+                            media_type = MediaContent.MUSIC
                             self._current_source = ZCONTENT_MUSIC
                     else:
-                        media_type = MediaType.VIDEO  # None
+                        media_type = MediaContent.VIDEO  # None
                     self._last_update = datetime.now(timezone.utc)
 
                 if current_audio_info != self.audio_info:
@@ -1052,6 +1109,7 @@ class ZidooClient:
             return_value["status"] = response.get("isPlay")
             result = response.get("music")
             if result is not None:
+                return_value["id"] = result.get("id")
                 return_value["title"] = result.get("title")
                 return_value["artist"] = result.get("artist")
                 return_value["track"] = result.get("number")
@@ -1320,7 +1378,7 @@ class ZidooClient:
             return True
         return False
 
-    async def get_device_list(self) -> dict | None:
+    async def get_device_list(self) -> dict[str, Any] | None:
         """Async Return list of root file system devices.
 
         Returns
@@ -1335,7 +1393,9 @@ class ZidooClient:
             return response["devices"]
         return None
 
-    async def get_movie_list(self, filter_type=-1, max_count=DEFAULT_COUNT) -> dict | None:
+    async def get_movie_list(
+        self, media_id: str | None = None, page=1, max_count=DEFAULT_COUNT
+    ) -> dict[str, Any] | None:
         """Async Return list of movies.
 
         Parameters
@@ -1344,18 +1404,32 @@ class ZidooClient:
             filter_type: int or str
                 see ZVIDEO_FILTER_TYPE
         Returns
-            json
+            JSON
                 raw API response if successful
         """
 
         def by_id(e):
             return e["id"]
 
-        if filter_type in ZVIDEO_FILTER_TYPES:
-            filter_type = ZVIDEO_FILTER_TYPES.get(filter_type, None)
+        filter_type: int | None = None
+        if media_id is not None:
+            try:
+                filter_type = ZVIDEO_FILTER_TYPES.get(ZidooUrls(media_id))
+            except ValueError:
+                pass
+
+        _LOGGER.debug(
+            "[%s] Extract movies media_id %s (filter_type: %s) (%s, %s)",
+            self._device_config.address,
+            media_id,
+            filter_type,
+            page,
+            max_count,
+        )
 
         # v2 http://{{host}}/Poster/v2/getAggregations?type=0&start=0&count=40
-        response = await self._req_json(f"ZidooPoster/getVideoList?page=1&pagesize={max_count}&type={filter_type}")
+        response = await self._req_json(f"ZidooPoster/getVideoList?page={page}&pagesize={max_count}&type={filter_type}")
+        _LOGGER.debug("[%s] Extract movies results : %s", self._device_config.address, response)
 
         if response is not None and response.get("status") == 200:
             if filter_type in {10, 11}:
@@ -1431,7 +1505,9 @@ class ZidooClient:
                     return result["aggregationId"]
         return movie_id
 
-    async def get_music_list(self, music_type: int = 0, music_id: int = None, max_count: int = DEFAULT_COUNT) -> dict:
+    async def get_music_list(
+        self, music_type: int = 0, music_id: int = None, start=0, max_count=DEFAULT_COUNT
+    ) -> dict[str, Any]:
         """Async Return list of music.
 
         Parameters
@@ -1443,15 +1519,23 @@ class ZidooClient:
             json
                 raw API response if successful
         """
-        if music_type == ZMEDIA_TYPE_ARTIST:
-            return await self._get_artist_list(music_id, max_count)
-        if music_type == ZMEDIA_TYPE_ALBUM:
-            return await self._get_album_list(music_id, max_count)
-        if music_type == ZMEDIA_TYPE_PLAYLIST:
-            return await self._get_playlist_list(music_id, max_count)
-        return await self._get_song_list(max_count)
+        _LOGGER.debug(
+            "[%s] Extract music music_type: %s, music_id: %s (%s, %s)",
+            self._device_config.address,
+            music_type,
+            music_id,
+            start,
+            max_count,
+        )
+        if music_type == 2:
+            return await self._get_artist_list(music_id, start, max_count)
+        if music_type == 1:
+            return await self._get_album_list(music_id, start, max_count)
+        if music_type == 3:
+            return await self._get_playlist_list(music_id, start, max_count)
+        return await self._get_song_list(start, max_count)
 
-    async def _get_song_list(self, max_count: int = DEFAULT_COUNT) -> dict | None:
+    async def _get_song_list(self, start=0, max_count=DEFAULT_COUNT) -> dict[str, Any] | None:
         """Async Return list of albums or album music.
 
         Parameters
@@ -1461,11 +1545,16 @@ class ZidooClient:
             json
                 raw API response if successful
         """
-        response = await self._req_json(f"MusicControl/v2/getSingleMusics?start=0&count={max_count}")
+        response = await self._req_json(f"MusicControl/v2/getSingleMusics?start={start}&count={max_count}")
         self._song_list = self._get_music_ids(response.get("array"))
+        if response:
+            for result in response.get("array", []):
+                result["type"] = 0
         return response
 
-    async def _get_album_list(self, album_id: int = None, max_count: int = DEFAULT_COUNT) -> dict | None:
+    async def _get_album_list(
+        self, album_id: int = None, start=0, max_count: int = DEFAULT_COUNT
+    ) -> dict[str, Any] | None:
         """Async Return list of albums or album music.
 
         Parameters
@@ -1478,12 +1567,19 @@ class ZidooClient:
                 raw API response if successful
         """
         if album_id:
-            response = await self._req_json(f"MusicControl/v2/getAlbumMusics?id={album_id}&start=0&count={max_count}")
+            response = await self._req_json(
+                f"MusicControl/v2/getAlbumMusics?id={album_id}&start={start}&count={max_count}"
+            )
         else:
-            response = await self._req_json(f"MusicControl/v2/getAlbums?start=0&count={max_count}")
+            response = await self._req_json(f"MusicControl/v2/getAlbums?start={start}&count={max_count}")
+        if response:
+            for result in response.get("array", []):
+                result["type"] = 1
         return response
 
-    async def _get_artist_list(self, artist_id: int = None, max_count: int = DEFAULT_COUNT) -> dict | None:
+    async def _get_artist_list(
+        self, artist_id: int = None, start=0, max_count: int = DEFAULT_COUNT
+    ) -> dict[str, Any] | None:
         """Async Return list of artists or artist music.
 
         Parameters
@@ -1498,12 +1594,17 @@ class ZidooClient:
                 raw API response if successful
         """
         if artist_id:
-            response = await self._req_json(f"MusicControl/v2/getArtistMusics?id={artist_id}&start=0&count={max_count}")
+            response = await self._req_json(
+                f"MusicControl/v2/getArtistMusics?id={artist_id}&start={start}&count={max_count}"
+            )
         else:
-            response = await self._req_json(f"MusicControl/v2/getArtists?start=0&count={max_count}")
+            response = await self._req_json(f"MusicControl/v2/getArtists?start={start}&count={max_count}")
+        if response:
+            for result in response.get("array", []):
+                result["type"] = 2
         return response
 
-    async def _get_playlist_list(self, playlist_id=None, max_count=DEFAULT_COUNT) -> dict | None:
+    async def _get_playlist_list(self, playlist_id=None, start=0, max_count=DEFAULT_COUNT) -> dict[str, Any] | None:
         """Async Return list of playlists.
 
         Parameters
@@ -1517,21 +1618,23 @@ class ZidooClient:
         """
         if playlist_id:
             if playlist_id == "playing":
-                response = await self._req_json(f"MusicControl/v2/getPlayQueue?start=0&count={max_count}")
+                response = await self._req_json(f"MusicControl/v2/getPlayQueue?start={start}&count={max_count}")
                 if response:
                     self._song_list = self._get_music_ids(response.get("array"))
             else:
                 response = await self._req_json(
-                    f"MusicControl/v2/getSongListMusics?id={playlist_id}&start=0&count={max_count}"
+                    f"MusicControl/v2/getSongListMusics?id={playlist_id}&start={start}&count={max_count}"
                 )
         else:
-            response = await self._req_json(
-                # "MusicControl/v2/getSongList?start=0&count={}".format(max_count)
-                "MusicControl/v2/getSongLists"
-            )
+            response = await self._req_json(f"MusicControl/v2/getSongList?start={start}&count={max_count}")
+        if response:
+            for result in response.get("array", []):
+                result["type"] = 3
         return response
 
-    async def search_movies(self, search_type: int | str = 0, max_count: int = DEFAULT_COUNT) -> dict | None:
+    async def search_movies(
+        self, query: str, media_type: MediaContent, start=0, max_count=DEFAULT_COUNT
+    ) -> dict | None:
         """Async Return list of video based on query.
 
         Parameters
@@ -1543,12 +1646,22 @@ class ZidooClient:
             json
                 raw API response (no status)
         """
-        if search_type in ZVIDEO_SEARCH_TYPES:
-            search_type = ZVIDEO_SEARCH_TYPES.get(search_type, 0)
+        search_type = 0
+        if media_type in ZVIDEO_SEARCH_TYPES:
+            search_type = ZVIDEO_SEARCH_TYPES.get(media_type, 0)
+        _LOGGER.debug(
+            "[%s] Search movies media_type %s (type: %s), query: %s (%s, %s)",
+            self._device_config.address,
+            media_type,
+            search_type,
+            query,
+            start,
+            max_count,
+        )
 
         # v1 "ZidooPoster/search?q={}&type={}&page=1&pagesize={}".format(query, filter_type, max_count)
         response = await self._req_json(
-            f"Poster/v2/searchAggregation?q={max_count}&type={search_type}&start=0&count={max_count}",
+            f"Poster/v2/searchAggregation?q={query}&type={search_type}&start={start}&count={max_count}",
             timeout=TIMEOUT_SEARCH,
         )
 
@@ -1560,9 +1673,10 @@ class ZidooClient:
         self,
         query: str,
         search_type: int | str = 0,
-        max_count: int = DEFAULT_COUNT,
+        start=0,
+        max_count=DEFAULT_COUNT,
         play: bool = False,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Async Return list of music based on query.
 
         Parameters
@@ -1582,17 +1696,31 @@ class ZidooClient:
             search_type = ZMUSIC_SEARCH_TYPES.get(search_type, 0)
 
         if search_type == 1:
-            return await self._search_album(query, max_count)
+            _LOGGER.debug(
+                "[%s] Search albums (%s) %s (%s, %s)", self._device_config.address, search_type, query, start, max_count
+            )
+            return await self._search_album(query, start, max_count)
         if search_type == 2:
-            return await self._search_artist(query, max_count)
-        response = await self._search_song(query, max_count)
+            _LOGGER.debug(
+                "[%s] Search artists (%s) %s (%s, %s)",
+                self._device_config.address,
+                search_type,
+                query,
+                start,
+                max_count,
+            )
+            return await self._search_artist(query, start, max_count)
+        _LOGGER.debug(
+            "[%s] Search music (%s) %s (%s, %s)", self._device_config.address, search_type, query, start, max_count
+        )
+        response = await self._search_song(query, start, max_count)
         if response:
             self._song_list = self._get_music_ids(response.get("array"), sub="result")
             if play and self._song_list:
                 await self.play_music(media_type="music", music_id=self._song_list[0])
         return response
 
-    async def _search_song(self, query: str, max_count: int = DEFAULT_COUNT) -> dict | None:
+    async def _search_song(self, query: str, start=0, max_count=DEFAULT_COUNT) -> dict[str, Any] | None:
         """Async Search by song title.
 
         Parameters
@@ -1603,12 +1731,12 @@ class ZidooClient:
                 raw API response (no status)
         """
         response = await self._req_json(
-            f"MusicControl/v2/searchMusic?key={query}&start=0&count={max_count}",
+            f"MusicControl/v2/searchMusic?key={query}&start={start}&count={max_count}",
             timeout=TIMEOUT_SEARCH,
         )
         return response
 
-    async def _search_album(self, query: str, max_count: int = DEFAULT_COUNT) -> dict | None:
+    async def _search_album(self, query: str, start=0, max_count=DEFAULT_COUNT) -> dict[str, Any] | None:
         """Async Search by album name.
 
         Parameters
@@ -1619,12 +1747,12 @@ class ZidooClient:
                 raw API response (no status)
         """
         response = await self._req_json(
-            f"MusicControl/v2/searchAlbum?key={query}&start=0&count={max_count}",
+            f"MusicControl/v2/searchAlbum?key={query}&start={start}&count={max_count}",
             timeout=TIMEOUT_SEARCH,
         )
         return response
 
-    async def _search_artist(self, query: str, max_count: int = DEFAULT_COUNT) -> dict | None:
+    async def _search_artist(self, query: str, start=0, max_count=DEFAULT_COUNT) -> dict[str, Any] | None:
         """Async Search by artist name.
 
         Parameters
@@ -1635,7 +1763,7 @@ class ZidooClient:
                 raw API response (no status)
         """
         response = await self._req_json(
-            f"MusicControl/v2/searchArtist?key={query}&start=0&count={max_count}",
+            f"MusicControl/v2/searchArtist?key={query}&start={start}&count={max_count}",
             timeout=TIMEOUT_SEARCH,
         )
         return response
@@ -1798,7 +1926,7 @@ class ZidooClient:
         response = await self._req_json(f"MusicControl/v2/getPlayQueue?start=0&count={max_count}")
         return response
 
-    async def get_file_list(self, uri: str, file_type: int = 0) -> dict | None:
+    async def get_file_list(self, uri: str, file_type: int = 0) -> dict[str, Any] | None:
         """Async Return file list in hass format.
 
         Returns
@@ -1854,59 +1982,7 @@ class ZidooClient:
         return_value["filelist"] = share_list
         return return_value
 
-    def generate_image_url(self, media_id: int, media_type: int, width: int = 400, height: int = None) -> str | None:
-        """Get link to thumbnail."""
-        if media_type in ZVIDEO_SEARCH_TYPES:
-            if height is None:
-                height = width * 3 / 2
-            return self._generate_movie_image_url(media_id, width, height)
-        if media_type in ZMUSIC_SEARCH_TYPES:
-            if height is None:
-                height = width
-            return self._generate_music_image_url(media_id, ZMUSIC_SEARCH_TYPES[media_type], width, height)
-        return None
-
-    def _generate_movie_image_url(self, movie_id: int, width: int = 400, height: int = 600) -> str:
-        """Get link to thumbnail.
-
-        Parameters
-            movie_id: int
-                database id
-            width: int
-                image width in pixels
-            height: int
-                image height in pixels
-        Returns
-            url for image
-        """
-        # http://{}/Poster/v2/getPoster?id=66&w=60&h=30
-        url = f"http://{self._host}/ZidooPoster/getFile/getPoster?id={movie_id}&w={width}&h={height}"
-
-        return url
-
-    # pylint: disable = W0613
-    def _generate_music_image_url(self, music_id: int, music_type: int = 0, width: int = 200, height: int = 200) -> str:
-        """Get link to thumbnail.
-
-        Parameters
-            music_id: int
-                dtanabase id
-            width: int
-                image width in pixels
-            height: int
-                image height in pixels
-        Returns
-            url for image
-        """
-        url = (
-            f"http://{self._host}/ZidooMusicControl/v2/getImage?id={music_id}"
-            f"&music_type={ZMUSIC_IMAGETYPE[music_type]}"
-            f"&type={music_type}&target={ZMUSIC_IMAGETARGET[music_type]}"
-        )
-
-        return url
-
-    def generate_current_image_url(self, width: int = 1080, height: int = 720) -> str:
+    def generate_current_image_url(self, width: int = 1080, height: int = 720) -> str | None:
         """Get link to artwork.
 
         Parameters
@@ -1919,19 +1995,27 @@ class ZidooClient:
         Returns
             url for image
         """
-        url = None
-
         if self._current_source == ZCONTENT_VIDEO and self._video_id > 0:
-            url = f"http://{self._host}/ZidooPoster/getFile/getBackdrop?id={self._video_id}&w={width}&h={height}"
-
+            return self.get_thumbnail_url(self._video_id, MediaContent.VIDEO, width, height)
         if self._current_source == ZCONTENT_MUSIC and self._music_id > 0:
-            url = (
-                f"http://{self._host}/ZidooMusicControl/v2/getImage?"
-                f"id={self._music_id}&music_type={self._music_type}&type=4&target=16"
-            )
+            return self.get_thumbnail_url(self._music_id, 0)  # KO with self._music_type
+        return None
 
-        # _LOGGER.debug("zidoo getting current image: url-{}".format(url))
-        return url
+    def get_thumbnail_url(
+        self, media_id: int, media_type: MediaContent | int, width: int = 1080, height: int = 720
+    ) -> str:
+        """Build thumbnail url."""
+        if isinstance(media_type, int):
+            music_type = media_type
+        else:
+            music_type = ZMUSIC_SEARCH_TYPES.get(media_type, None)
+        if music_type is None:
+            return f"http://{self._host}/ZidooPoster/getFile/getBackdrop?id={media_id}&w={width}&h={height}"
+
+        return (
+            f"http://{self._host}/ZidooMusicControl/v2/getImage?id={media_id}&music_type="
+            f"{ZMUSIC_IMAGETYPE[music_type]}&type={music_type}&target={ZMUSIC_IMAGETARGET[music_type]}"
+        )
 
     async def turn_on(self):
         """Async Turn the media player on."""
@@ -2060,3 +2144,314 @@ class ZidooClient:
         if response is not None and response.get("status") == 200:
             return response
         return None
+
+    def get_localized(self, value: str) -> str:
+        """Return localized value."""
+        translation = TRANSLATIONS.get(value)
+        if translation is None:
+            return value
+        translated = translation.get(self.language)
+        if translated:
+            return translated
+        return value
+
+    async def _get_browsing_root(self) -> BrowseMediaItem:
+        """Return root media item."""
+        root_item = BrowseMediaItem(
+            title=self.get_localized("Media Library"),
+            media_id="",
+            media_class=MediaClass.DIRECTORY.value,
+            media_type=MediaContent.URL.value,
+            can_browse=True,
+            can_search=True,
+            items=[],
+        )
+        for item in self._browsing_shortcuts:
+            library_items = [x for x in ZIDOO_MEDIA_ENTRIES if x.media_id == item]
+            if len(library_items) == 0:
+                continue
+            library_item = library_items[0]
+            root_item.items.append(
+                BrowseMediaItem(
+                    title=self.get_localized(library_item.title),
+                    media_id=library_item.media_id,
+                    media_class=library_item.media_class if library_item.media_class else MediaClass.DIRECTORY,
+                    media_type=library_item.media_type,
+                    can_browse=True,
+                )
+            )
+        if self._devices is None or self._devices_update_timestamp < time.time() - DEVICES_REFRESH:
+            self._devices = await self.get_device_list()
+            self._devices_update_timestamp = time.time()
+            _LOGGER.debug("Found devices %s", self._devices)
+
+        if self._devices:
+            for device in self._devices:
+                content_type = device.get("type")
+                media_type = ZCONTENT_ITEM_TYPE.get(content_type, None)
+                media_class = ZCONTENT_ITEM_CLASS.get(media_type, None)
+                if media_type is None or media_class is None:
+                    continue
+                root_item.items.append(
+                    BrowseMediaItem(
+                        title=device.get("name", ""),
+                        media_id=ZidooUrls.FILES.value + "/" + quote(device.get("path", "")),
+                        media_class=media_class,
+                        media_type=media_type,
+                        can_browse=media_class == MediaClass.DIRECTORY,
+                    )
+                )
+        return root_item
+
+    async def browse_media(
+        self, query: str | None, media_id: str | None, media_type: str | None, paging: dict[str, Any] | None
+    ) -> tuple[BrowseMediaItem, dict[str, Any]] | None:
+        """Browse media."""
+        # pylint: disable=R0914,R1702,R0911,R0915,W1405
+        try:
+            if paging is None:
+                paging = {"page": 1, "limit": 10}
+            else:
+                paging = paging.copy()
+            if self._localization is None:
+                await self.update_localization()
+            if paging is None:
+                paging = {"page": 1, "limit": 10}
+            else:
+                paging = paging.copy()
+
+            start = (paging["page"] - 1) * paging["limit"]
+            max_count = paging["limit"]
+
+            if not media_id:
+                root_item = await self._get_browsing_root()
+                paging["count"] = len(root_item.items)
+                return root_item, paging
+
+            root_item = BrowseMediaItem(
+                title=self.get_localized("Files"),
+                media_id=str(media_id),
+                media_class=MediaClass.DIRECTORY.value,
+                media_type=media_type,
+                can_browse=True,
+                can_search=True,
+                items=[],
+            )
+
+            # File Browser Lists
+            if media_id.startswith(ZidooUrls.FILES.value) or media_id.startswith(ZidooUrls.SHARES.value):
+                is_network_file = False
+
+                if media_id.startswith(ZidooUrls.FILES.value):  # file system list
+                    if query is None and media_id:
+                        query = unquote(media_id.replace(ZidooUrls.FILES.value + "/", ""))
+                    result = await self.get_file_list(query)
+                else:  # samba shares
+                    is_network_file = True
+                    if query is None and media_id:
+                        query = unquote(media_id.replace(ZidooUrls.SHARES.value + "/", ""))
+                    result = await self.get_host_list(query)
+                root_item.title = unquote(query)
+
+                if result and result.get("filelist"):
+                    for item in result["filelist"]:
+                        content_type = item["type"]
+                        item_type = ZCONTENT_ITEM_TYPE.get(content_type, None)
+                        item_class = ZCONTENT_ITEM_CLASS.get(item_type, None)
+                        item_class = item_class if item_class else MediaClass.DIRECTORY
+                        if item_type is not None:
+                            path = item.get("path", "")
+                            if not is_network_file:
+                                path = f"{ZidooUrls.FILES.value}/{quote(path)}"
+                            else:
+                                path = f"{ZidooUrls.SHARES.value}/{quote(path)}"
+                            root_item.items.append(
+                                BrowseMediaItem(
+                                    title=item.get("name", ""),
+                                    media_type=item_type,
+                                    media_class=item_class,
+                                    media_id=path,
+                                    can_browse=item_class == MediaClass.DIRECTORY,
+                                    can_play=item_class != MediaClass.DIRECTORY,
+                                )
+                            )
+                    paging["count"] = len(result["filelist"])
+                return root_item, paging
+
+            if internal_entry := get_media_entry(media_id):
+                root_item.title = self.get_localized(internal_entry.title)
+
+            # Music
+            if media_type in [
+                MediaContent.MUSIC,
+                MediaContent.ALBUM,
+                MediaContent.ARTIST,
+                MediaContent.PLAYLIST,
+                MediaContent.TRACK,
+            ]:
+                search_type: int = ZMUSIC_SEARCH_TYPES.get(media_type, 0)
+                child_item_type = MediaContent.MUSIC
+                if query and len(query) > 0 or is_internal_url(media_id):
+                    child_item_type = media_type
+
+                if query and len(query) > 0:
+                    result = await self.search_music(query, search_type, start, max_count)
+                    root_item.title = query
+                    # search_id = None
+                else:
+                    # TODO set title
+                    if media_id is not None:
+                        try:
+                            media_id = int(media_id)
+                            # search_type = 0
+                        except ValueError:
+                            media_id = None
+                    result = await self.get_music_list(search_type, media_id, start, max_count)
+                    # if media_type == MediaContent.PLAYLIST:  # convert playlist list
+                    #     result.insert(0, {"name": "PLAYING", "id": "playing"}) # ????
+                    #     result = to_array(result)  # playlist convertor
+                    # shortcut = get_shortcut_name(search_id)
+                    # if shortcut:
+                    #     title = shortcut
+                _LOGGER.debug("[%s] Find music results %s", self._device_config.address, result)
+                if result and result.get("array"):
+                    paging["count"] = result["total"]
+                    for item in result["array"]:
+                        if item.get("result"):
+                            data = item["result"]
+                        else:
+                            data = item
+                        item_id = data["id"]
+                        artist = item.get("artist", None)
+                        album = item.get("album", None)
+                        if child_item_type in [MediaContent.ALBUM, MediaContent.MUSIC]:
+                            item_name = data.get("name", data.get("title", ""))
+                        else:
+                            item_name = data.get("name", f"{data.get('artist', '')} - {data.get('title', '')}")
+                        if child_item_type == MediaContent.ALBUM:
+                            album = item_name
+                        item_thumbnail: str | None = None
+                        if child_item_type in [MediaContent.ALBUM, MediaContent.MUSIC]:
+                            item_thumbnail = self.get_thumbnail_url(
+                                item_id, child_item_type, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT
+                            )
+                        root_item.items.append(
+                            BrowseMediaItem(
+                                title=item_name,
+                                media_type=child_item_type,
+                                media_class=child_item_type,
+                                media_id=item.get("path", str(item.get("id", -1))),
+                                can_browse=child_item_type != MediaContent.MUSIC,
+                                can_play=child_item_type == MediaContent.MUSIC,
+                                thumbnail=item_thumbnail,
+                                artist=artist,
+                                album=album,
+                                duration=item.get("duration", None),
+                            )
+                        )
+                return root_item, paging
+
+            # Movie/Poster Library Lists
+            result: dict[str, Any] | None = None
+            thumbnail: str | None = None
+            is_episodes = False
+            if query and len(query) > 0:
+                result = to_data_list(await self.search_movies(query, MediaContent(media_type), start, max_count))
+                root_item.title = query
+            else:
+                if is_internal_url(media_id):
+                    result = await self.get_movie_list(media_id, paging["page"], max_count)
+                    entries = [x for x in ZIDOO_MEDIA_ENTRIES if x.media_id == media_id]
+                    if len(entries) > 0:
+                        root_item.title = self.get_localized(entries[0].title)
+                else:
+                    try:
+                        media_id = int(media_id)
+                        episodes = await self.get_episode_list(int(media_id))
+                        is_episodes = True
+                        if episodes is not None:
+                            result = {"data": episodes, "total": len(episodes)}
+                            if (parent_id := episodes[0].get("parentId")) > 0:
+                                thumbnail = self.get_thumbnail_url(
+                                    parent_id, MediaContent.VIDEO, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT
+                                )
+                        # search_type = 0
+                    except ValueError:
+                        pass
+
+            # elif search_id in ZVIDEO_FILTER_TYPES:
+            #     result = await self.get_movie_list(search_id, BROWSE_LIMIT)
+            #     shortcut = get_shortcut_name(search_id)
+            #     if shortcut:
+            #         title = shortcut
+            # else:
+            #     result = await player.get_collection_list(search_id)
+
+            if result and (data := result.get("data")):
+                paging["count"] = result.get("total", result.get("size", len(data)))
+                for item in data:
+                    child_type = item["type"]
+                    item_id = item["id"]
+                    item_type = MediaContent(media_type)
+                    if child_type == 0:
+                        item_type = MediaContent.VIDEO
+                        item_id = item["aggregationId"]
+                    item_thumbnail = self.get_thumbnail_url(
+                        item_id, MediaContent.VIDEO, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT
+                    )
+                    if is_episodes:
+                        item_type = MediaContent.EPISODE
+
+                    root_item.items.append(
+                        BrowseMediaItem(
+                            title=item.get("name", ""),
+                            media_type=item_type,
+                            media_class=item_type,
+                            media_id=str(item_id),
+                            can_play=child_type in {1, 5, 6},
+                            can_browse=child_type in {2, 3, 4, 6},
+                            thumbnail=thumbnail if thumbnail else item_thumbnail,
+                        )
+                    )
+                if name := result.get("name"):
+                    root_item.title = name
+            return root_item, paging
+
+        # pylint: disable = W0718
+        except Exception as ex:
+            _LOGGER.exception(
+                "[%s] Error while browsing media %s,%s : %s",
+                self._device_config.address,
+                media_id,
+                media_type,
+                ex,
+            )
+        root_item = await self._get_browsing_root()
+        paging["count"] = len(root_item.items)
+        return root_item, paging
+
+    @cmd_wrapper
+    async def play_media(self, params: dict[str, Any]):
+        """Play media."""
+        _LOGGER.debug("[%s] Play media %s", self._device_config.address, params)
+        media_id: str | None = params.get("media_id")
+        media_type: str | None = params.get("media_type")
+        # TODO handle action (enqueue, play...)
+        # action = params.get("action")
+        if media_id is None or media_type is None:
+            return StatusCodes.BAD_REQUEST
+        if media_entry := get_media_entry(media_id):
+            media_id = unquote(media_id.replace(media_entry.media_id + "/", ""))
+            _LOGGER.debug("[%s] Play file %s", self._device_config.address, media_id)
+            await self.play_file(media_id)
+        elif media_type in [MediaContent.VIDEO, MediaContent.EPISODE]:
+            _LOGGER.debug("[%s] Play movie %s", self._device_config.address, media_id)
+            await self.play_movie(int(media_id))
+        elif media_type == MediaContent.MUSIC:
+            _LOGGER.debug("[%s] Play music %s", self._device_config.address, media_id)
+            await self.play_music(int(media_id))
+        else:
+            _LOGGER.debug("[%s] Play other %s", self._device_config.address, media_id)
+            await self.play_file(media_id)
+
+        return StatusCodes.OK

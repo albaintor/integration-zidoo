@@ -6,6 +6,7 @@ Media-player entity functions.
 """
 
 import logging
+from dataclasses import asdict
 from typing import Any
 
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
@@ -14,12 +15,14 @@ from ucapi.media_player import (
     Commands,
     DeviceClasses,
     Features,
-    MediaType,
+    MediaContent,
     Options,
     States,
 )
 
 from config import ConfigDevice, ZidooEntity, create_entity_id
+
+# from const import MediaSearchFilter
 from zidooaio import ZKEYS, ZidooClient
 
 _LOG = logging.getLogger(__name__)
@@ -81,6 +84,11 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
             Features.AUDIO_TRACK,
             Features.SUBTITLE,
             Features.SEEK,
+            "play_media",  # TODO : replace when UC library updated
+            # "clear_playlist",
+            "browse_media",
+            "search_media",
+            "search_media_classes",
         ]
         attributes = {
             Attributes.STATE: States.UNAVAILABLE,
@@ -92,7 +100,8 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
             Attributes.MEDIA_ARTIST: "",
             Attributes.MEDIA_POSITION: 0,
             Attributes.MEDIA_DURATION: 0,
-            Attributes.MEDIA_TYPE: MediaType.VIDEO,
+            Attributes.MEDIA_TYPE: MediaContent.VIDEO,
+            "media_id": None,
         }
         # # use sound mode support & name from configuration: receiver might not yet be connected
         # if device.support_sound_mode:
@@ -218,12 +227,59 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
             res = await self._device.send_key(ZKEYS.ZKEY_NUM_8)
         elif cmd_id == Commands.DIGIT_9:
             res = await self._device.send_key(ZKEYS.ZKEY_NUM_9)
+        elif cmd_id == "play_media":  # TODO to be updated when UCAPI
+            res = await self._device.play_media(params)
+        # elif cmd_id == "clear_playlist":  # TODO to be updated when UCAPI
+        #     res = await self._device.clear_playlist()
+        # TODO play media
         else:
             return StatusCodes.NOT_IMPLEMENTED
 
         if res:
             return StatusCodes.OK
         return StatusCodes.BAD_REQUEST
+
+    # pylint: disable=W0613
+    async def browse_media(
+        self,
+        params: dict[str, Any],
+        *,
+        websocket: Any,
+    ) -> dict[str, Any] | StatusCodes:
+        """Browse media command."""
+        browse_media_item, paging = await self._device.browse_media(
+            None, params.get("media_id", None), params.get("media_type", None), params.get("paging", None)
+        )
+        return {"media": asdict(browse_media_item), "pagination": paging}
+
+    async def search_media(
+        self,
+        params: dict[str, Any],
+        *,
+        websocket: Any,
+    ) -> dict[str, Any] | StatusCodes:
+        """
+        Execute media search request.
+
+        Returns NOT_IMPLEMENTED if no handler is installed.
+
+        :param params: search parameters
+        :param websocket: optional websocket connection. Allows for directed event
+                          callbacks instead of broadcasts.
+        :return: search response or status code if any error occurs
+        """
+        _LOG.debug("[%s] Search media request %s", self._device.device_config.address, params)
+        query: str | None = params.get("query", None)
+        media_id: str | None = params.get("media_id", None)
+        media_type: str | None = params.get("media_type", None)
+        paging: dict[str, Any] | None = params.get("paging", None)
+        # media_search_filter: MediaSearchFilter | None = None
+        # if data := params.get("filter", None) is not None:
+        #     media_search_filter = MediaSearchFilter(**data)
+        if query is None:
+            return StatusCodes.BAD_REQUEST
+        browse_media_item, paging = await self._device.browse_media(query, media_id, media_type, paging)
+        return {"media": [asdict(x) for x in browse_media_item.items], "pagination": paging}
 
     def filter_changed_attributes(self, update: dict[str, Any]) -> dict[str, Any]:
         """
@@ -252,6 +308,7 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
             Attributes.MEDIA_ALBUM,
             Attributes.MEDIA_ARTIST,
             "media_position_updated_at",
+            "media_id",
         ]:
             if attr in update:
                 attributes = self._key_update_helper(attr, update[attr], attributes)
