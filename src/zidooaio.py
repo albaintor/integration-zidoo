@@ -71,7 +71,7 @@ THUMBNAIL_WIDTH = 300
 THUMBNAIL_HEIGHT = 200
 DEVICES_REFRESH = 10 * 60
 
-# pylint: disable = C0302
+# pylint: disable = C0302,R0915
 
 
 class Events(StrEnum):
@@ -298,6 +298,10 @@ class ZidooClient:
         self._localization: dict[str, Any] | None = None
         self._api = api
         self._browsing_shortcuts = ZDEFAULT_SHORTCUTS
+        try:
+            self._browsing_shortcuts = self._device_config.browsing_categories.split(";")
+        except Exception:  # pylint: disable=W0718
+            pass
         self._devices_update_timestamp = 0
         self._devices: dict[str, Any] | None = None
         self._media_id: str | None = None

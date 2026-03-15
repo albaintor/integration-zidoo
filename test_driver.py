@@ -188,6 +188,19 @@ class RemoteWebsocket:
             _LOG.error("Timeout while extracting entities states")
             return None
 
+    async def start_setup(self, reconfigure=False):
+        try:
+            response = await self.send_request_and_wait(
+                {"msg": "setup_driver", "msg_data": {"reconfigure": reconfigure, "setup_data": {}}},
+                timeout=WS_TIMEOUT,
+            )
+            return response
+        except asyncio.TimeoutError:
+            _LOG.error("Timeout while starting setup")
+            return None
+        except Exception as ex:
+            _LOG.error("Error while starting setup", ex)
+
     async def subscribe_entities(self, entity_ids: list[str]):
         try:
             response = await self.send_request_and_wait(
@@ -546,6 +559,13 @@ class BrowsingData:
     search_mode = False
 
 
+class SetupData:
+    window: tk.Toplevel | None = None
+    mapping: dict[str, ttk.Widget | tk.IntVar | tk.StringVar] = {}
+    mapping_type: dict[str, str] = {}
+    data: dict[str, Any] | None = None
+
+
 async def load_item_image_url(button: ttk.Button, item: dict[str, Any]):
     try:
         photo = load_image_from_url(item.get("thumbnail"), max_size=(BROWSING_CELL_WIDTH, BROWSING_CELL_WIDTH))
@@ -587,6 +607,16 @@ class RemoteInterface(tk.Tk):
         self._progress_label = ttk.Label(tool_bar, text="00:00:00")
         self._progress_label.pack(side="right", fill="x", expand=True)
         tool_bar.pack(side="bottom", fill="x", expand=True)
+
+        start_setup_button = ttk.Button(self._left_frame, text="Start setup", command=lambda: self.setup_open())
+        start_setup_button.grid(row=self._row, column=0)
+        label_setup = ttk.Label(self._left_frame, text="Reconfigure devices")
+        label_setup.grid(row=self._row, column=1)
+        self._setup_reconfigure = tk.IntVar(value=0)
+        reconfigure_checkbox = tk.Checkbutton(self._left_frame, variable=self._setup_reconfigure, onvalue=1, offvalue=0)
+        reconfigure_checkbox.grid(row=self._row, column=2)
+        self._setup_data = SetupData()
+        self._row += 1
 
         self._media_browse_button = ttk.Button(
             self._left_frame, text="Browse media", command=lambda: self.media_browse_open()
@@ -1162,6 +1192,164 @@ class RemoteInterface(tk.Tk):
         # else:
         #     self._media_browse_window.destroy()
 
+    def setup_open(self):
+        if self._setup_data.window is None or not self._setup_data.window.winfo_exists():
+            self._setup_data.window = tk.Toplevel(self, width=600, height=600)
+            self._setup_data.window.grid_columnconfigure(0, weight=1)
+            self._setup_data.window.grid_columnconfigure(1, weight=1)
+            self._setup_data.window.grid_columnconfigure(2, weight=1)
+            self._setup_data.window.grid_columnconfigure(3, weight=1)
+        asyncio.run_coroutine_threadsafe(
+            self._worker.start_setup(self._setup_reconfigure.get() == 1),
+            self._worker._loop,
+        )
+
+    def setup_next(self):
+        message = {"msg": "set_driver_user_data", "msg_data": {"input_values": {}}}
+        settings: list[dict[str, Any]] = (
+            self._setup_data.data.get("require_user_action", {}).get("input").get("settings")
+        )
+        for key, widget in self._setup_data.mapping.items():
+            if isinstance(widget, tk.IntVar):
+                if self._setup_data.mapping_type.get(key, "") == "number":
+                    message["msg_data"]["input_values"][key] = widget.get()
+                else:
+                    message["msg_data"]["input_values"][key] = True if widget.get() == 1 else False
+            elif isinstance(widget, ttk.Combobox):
+                entries = [x for x in settings if x.get("id", "") == key]
+                if len(entries) == 0:
+                    continue
+                entry = entries[0]
+                selected_entry = [
+                    x
+                    for x in entry.get("field", {}).get("dropdown", {}).get("items", [])
+                    if x.get("label", {}).get("en", "") == widget.get()
+                ]
+                if len(selected_entry) == 0:
+                    _LOG.error("No matching entries found in dropdown %s for selected value %s", entry, widget.get())
+                    continue
+                message["msg_data"]["input_values"][key] = selected_entry[0].get("id", "")
+            else:
+                message["msg_data"]["input_values"][key] = widget.get()
+        asyncio.run_coroutine_threadsafe(
+            self._worker.send_request(message),
+            self._worker._loop,
+        )
+        for widget in self._setup_data.window.winfo_children():
+            widget.destroy()
+
+    def setup_action(self, data: dict[str, Any]):
+        try:
+            if self._setup_data.window is None or not self._setup_data.window.winfo_exists():
+                self._setup_data.window = tk.Toplevel(self, width=600, height=600)
+                self._setup_data.window.grid_columnconfigure(0, weight=1, pad=5)
+                self._setup_data.window.grid_columnconfigure(1, weight=1, pad=5)
+                self._setup_data.window.grid_columnconfigure(2, weight=1, pad=5)
+                self._setup_data.window.grid_columnconfigure(3, weight=1, pad=5)
+                self._setup_data.window.grid_propagate(False)
+                self._setup_data.window.minsize(600, 600)
+            if self._setup_data.window is not None:
+                for widget in self._setup_data.window.winfo_children():
+                    widget.destroy()
+                self._setup_data.window.grid_propagate(False)
+                self._setup_data.window.minsize(600, 600)
+            self._setup_data.mapping = {}
+            self._setup_data.mapping_type = {}
+            row = 0
+            column = 0
+            input_data = data.get("require_user_action", {}).get("input")
+            if input_data is None:
+                if state := data.get("state"):
+                    label = tk.Label(self._setup_data.window, text=state)
+                    label.grid(row=row, column=column, columnspan=4)
+                    row += 1
+                if error := data.get("error"):
+                    label = tk.Label(self._setup_data.window, text=error)
+                    label.grid(row=row, column=column, columnspan=4)
+                    row += 1
+                self.update()
+                return
+
+            if input_field := input_data.get("title"):
+                label = tk.Label(self._setup_data.window, text=input_field.get("en", ""), wraplength=100)
+                label.grid(row=row, column=column, columnspan=4)
+                row += 1
+            if settings := input_data.get("settings"):
+                self._setup_data.data = data
+                for setting in settings:
+                    column = 0
+                    field_id = setting.get("id", "")
+                    if field := setting.get("label"):
+                        label = tk.Label(self._setup_data.window, text=field.get("en", ""), wraplength=100)
+                        label.grid(row=row, column=column, columnspan=2, sticky="w")
+                        column += 2
+                    if field := setting.get("field"):
+                        if dropdown := field.get("dropdown"):
+                            combo = ttk.Combobox(self._setup_data.window, state="readonly", justify="left")
+                            combo.grid(row=row, column=column, columnspan=2, sticky="we")
+                            combo["values"] = [x.get("label", {}).get("en", "") for x in dropdown.get("items", [])]
+                            current_value = [
+                                x for x in dropdown.get("items", []) if x.get("id") == dropdown.get("value", "")
+                            ]
+                            if len(current_value) > 0:
+                                combo.set(current_value[0].get("label", {}).get("en", ""))
+                            else:
+                                _LOG.warning(
+                                    "No default entry found in dropdown %s for selected value %s",
+                                    dropdown,
+                                    dropdown.get("value", ""),
+                                )
+                            self._setup_data.mapping[field_id] = combo
+                            self._setup_data.mapping_type[field_id] = "dropdown"
+                        elif text := field.get("text"):
+                            entry_text = tk.StringVar()
+                            text_field = ttk.Entry(self._setup_data.window, textvariable=entry_text)
+                            entry_text.set(text.get("value", ""))
+                            text_field.grid(row=row, column=column, columnspan=2, sticky="we")
+                            self._setup_data.mapping[field_id] = entry_text
+                            self._setup_data.mapping_type[field_id] = "text"
+                        elif text := field.get("password"):
+                            entry_text = tk.StringVar()
+                            text_field = ttk.Entry(self._setup_data.window, textvariable=entry_text)
+                            entry_text.set(text.get("value", ""))
+                            text_field.grid(row=row, column=column, columnspan=2, sticky="we")
+                            self._setup_data.mapping[field_id] = entry_text
+                            self._setup_data.mapping_type[field_id] = "password"
+                        elif text := field.get("textarea"):
+                            entry_text = tk.StringVar()
+                            text_field = ttk.Entry(self._setup_data.window, textvariable=entry_text)
+                            entry_text.set(text.get("value", ""))
+                            text_field.grid(row=row, column=column, columnspan=2, sticky="we")
+                            self._setup_data.mapping[field_id] = entry_text
+                            self._setup_data.mapping_type[field_id] = "textarea"
+                        elif checkbox := field.get("checkbox"):
+                            var = tk.IntVar(value=1 if checkbox.get("value", False) else 0)
+                            checkbox_button = tk.Checkbutton(
+                                self._setup_data.window, variable=var, onvalue=1, offvalue=0
+                            )
+                            checkbox_button.grid(row=row, column=column, columnspan=2, sticky="we")
+                            self._setup_data.mapping[field_id] = var
+                            self._setup_data.mapping_type[field_id] = "checkbox"
+                        elif label := field.get("label"):
+                            label_field = ttk.Label(
+                                self._setup_data.window, text=label.get("value", {}).get("en", ""), wraplength=100
+                            )
+                            label_field.grid(row=row, column=column, columnspan=4 - column, sticky="we")
+                        elif text := field.get("number"):
+                            entry_text = tk.IntVar()
+                            text_field = ttk.Entry(self._setup_data.window, textvariable=entry_text)
+                            entry_text.set(text.get("value", 0))
+                            text_field.grid(row=row, column=column, columnspan=2, sticky="we")
+                            self._setup_data.mapping[field_id] = entry_text
+                            self._setup_data.mapping_type[field_id] = "number"
+                    row += 1
+
+                submit_button = ttk.Button(self._setup_data.window, text="Next", command=lambda: self.setup_next())
+                submit_button.grid(row=row, column=0)
+                self.update()
+        except Exception as ex:
+            _LOG.exception("Error %s", ex)
+
 
 class WorkerThread(threading.Thread):
 
@@ -1219,6 +1407,15 @@ class WorkerThread(threading.Thread):
             _LOG.error("Command %s error : no websocket connected", command)
             return None
         return await self._ws.send_command(command)
+
+    async def send_request(self, message: dict[str, Any]) -> dict[str, Any] | None:
+        if self._ws is None:
+            _LOG.error("Send message %s error : no websocket connected", message)
+            return None
+        return await self._ws.send_request_and_wait(message)
+
+    async def start_setup(self, reconfigure=False):
+        return await self._ws.start_setup(reconfigure)
 
     async def browse_media(
         self,
@@ -1337,6 +1534,14 @@ class WorkerThread(threading.Thread):
         print_json(json=json.dumps(msg))
         await self.update_attributes(updated_data)
 
+    async def driver_setup_changed(self, msg: dict[str, Any]) -> None:
+        _LOG.debug("Driver setup changed : %s", msg)
+        print_json(json=json.dumps(msg))
+        msg_data = msg.get("msg_data", None)
+        if msg_data is None:  # or msg_data.get("state") != "WAIT_USER_ACTION":
+            return
+        self._interface._ui_queue.put(lambda data=msg_data: self._interface.setup_action(data))
+
     def change_media_player(self, new_entity: str):
         self._interface.set_title("")
         self._interface.set_artist("")
@@ -1366,6 +1571,7 @@ class WorkerThread(threading.Thread):
         try:
             self._ws = RemoteWebsocket(self._loop)
             self._ws.subscribe_events("entity_change", self.entity_changed)
+            self._ws.subscribe_events("driver_setup_change", self.driver_setup_changed)
             await self._ws.websocket_connect()
             await asyncio.sleep(1)
             data = await self._ws.get_driver_vertion()

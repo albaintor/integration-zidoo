@@ -15,7 +15,7 @@ from typing import Callable, Iterator
 
 from ucapi import Entity, EntityTypes
 
-from const import MANUFACTURER
+from const import MANUFACTURER, ZDEFAULT_SHORTCUTS
 
 _LOG = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ class ConfigDevice:
     always_on: bool | None = field(default=False)
     refresh_interval: int | None = field(default=10)
     sensor_include_device_name: bool | None = field(default=True)
+    browsing_categories: str = field(default=";".join(ZDEFAULT_SHORTCUTS))
 
     def __post_init__(self):
         """Apply default values on missing fields."""
@@ -148,6 +149,7 @@ class Devices:
                 item.wifi_mac_address = device_instance.wifi_mac_address
                 item.always_on = device_instance.always_on
                 item.refresh_interval = device_instance.refresh_interval
+                item.browsing_categories = device_instance.browsing_categories
                 return self.store()
         return False
 

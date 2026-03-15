@@ -46,6 +46,34 @@ Supported commands:
 - Video information
 - Audio information
 
+**Browsing media and search**
+
+Browsing categories are configurable in the setup flow : just fill the list of URLs separated by ";"
+
+Example : `zidoo://videos/all;zidoo://music/albums;zidoo://files/main` 
+
+| Category                   | URL                      |
+|----------------------------|--------------------------|
+| All videos                 | zidoo://videos/all       |
+| Favorites                  | zidoo://videos/favorites |
+| Watching                   | zidoo://videos/watching  |
+| Movies                     | zidoo://videos/movies    |
+| TV Shows                   | zidoo://videos/tvshows   |
+| Standard definition videos | zidoo://videos/sd        |
+| Blurays                    | zidoo://videos/bluray    |
+| 4K                         | zidoo://videos/4k        |
+| 3D                         | zidoo://videos/3d        |
+| Children                   | zidoo://videos/children  |
+| Recent                     | zidoo://videos/recent    |
+| Unwatched                  | zidoo://videos/unwatched |
+| Other                      | zidoo://videos/other     |
+| Songs                      | zidoo://music/songs      |
+| Albums                     | zidoo://music/albums     |
+| Artists                    | zidoo://music/artists    |
+| Playlists                  | zidoo://music/playlists  |
+| Local files                | zidoo://files/main       |
+| Network files              | zidoo://files/share      |
+
 
 Multiple instances are supported
 
@@ -81,7 +109,7 @@ available [environment variables](https://github.com/unfoldedcircle/integration-
 in the Python integration library to control certain runtime features like listening interface and configuration
 directory.
 
-## Build self-contained binary for Remote Two
+## Build self-contained binary for Remote Two/3
 
 After some tests, turns out python stuff on embedded is a nightmare. So we're better off creating a single binary file
 that has everything in it.

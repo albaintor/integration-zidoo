@@ -25,6 +25,7 @@ from ucapi import (
 import config
 import discover
 from config import ConfigDevice
+from const import ZDEFAULT_SHORTCUTS
 from zidooaio import ZidooClient
 
 _LOG = logging.getLogger(__name__)
@@ -321,8 +322,8 @@ class SetupFlow:
 
                 return RequestUserInput(
                     {
-                        "en": "Configure your Orange decoder",
-                        "fr": "Configurez votre décodeur Orange",
+                        "en": "Configure your Zidoo device",
+                        "fr": "Configurez votre lecteur Zidoo",
                     },
                     [
                         {
@@ -363,6 +364,14 @@ class SetupFlow:
                                     "steps": 1,
                                     "decimals": 0,
                                 }
+                            },
+                        },
+                        {
+                            "field": {"textarea": {"value": self._reconfigured_device.browsing_categories}},
+                            "id": "browsing_categories",
+                            "label": {
+                                "en": "Browsing categories : see project page for full list",
+                                "fr": "Catégories pour la navigation : voir la page du projet pour avoir la liste",
                             },
                         },
                     ],
@@ -458,6 +467,18 @@ class SetupFlow:
                     },
                     "field": {"number": {"value": 10, "min": 5, "max": 120, "steps": 1, "decimals": 0}},
                 },
+                {
+                    "field": {
+                        "textarea": {
+                            "value": ";".join(ZDEFAULT_SHORTCUTS),
+                        }
+                    },
+                    "id": "browsing_categories",
+                    "label": {
+                        "en": "Browsing categories : see project page for full list",
+                        "fr": "Catégories pour la navigation : voir la page du projet pour avoir la liste",
+                    },
+                },
             ],
         )
 
@@ -477,6 +498,8 @@ class SetupFlow:
             refresh_interval = int(msg.input_values.get("refresh_interval", 10))
         except ValueError:
             return SetupError(error_type=IntegrationSetupError.OTHER)
+        browsing_categories = msg.input_values.get("browsing_categories", ";".join(ZDEFAULT_SHORTCUTS))
+
         _LOG.debug("Chosen Zidoo: %s. Trying to connect and retrieve device information...", host)
         try:
             # connection check and mac_address extraction for wakeonlan
@@ -512,6 +535,7 @@ class SetupFlow:
                 wifi_mac_address=wifi_mac_address,
                 always_on=always_on,
                 refresh_interval=refresh_interval,
+                browsing_categories=browsing_categories,
             )
         )  # triggers ZidooAVR instance creation
         config.devices.store()
@@ -571,6 +595,7 @@ class SetupFlow:
             refresh_interval = int(msg.input_values.get("refresh_interval", 10))
         except ValueError:
             return SetupError(error_type=IntegrationSetupError.OTHER)
+        browsing_categories = msg.input_values.get("browsing_categories", ";".join(ZDEFAULT_SHORTCUTS))
 
         _LOG.debug("User has changed configuration")
         self._reconfigured_device.address = address
@@ -578,6 +603,7 @@ class SetupFlow:
         self._reconfigured_device.wifi_mac_address = wifi_mac_address
         self._reconfigured_device.always_on = always_on
         self._reconfigured_device.refresh_interval = refresh_interval
+        self._reconfigured_device.browsing_categories = browsing_categories
 
         config.devices.add_or_update(self._reconfigured_device)  # triggers ATV instance update
         await asyncio.sleep(1)
