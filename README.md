@@ -1,9 +1,9 @@
-# Zidoo integration for Remote Two
+# Zidoo integration for Remote Two/3
 
 Using code from [Zidoo Home Assistant component](https://github.com/wizmo2/zidoo-player)
 and [uc-integration-api](https://github.com/aitatoi/integration-python-library)
 
-The driver discovers Zidoo devices on the network. Multiple entities are exposed to the remote.
+The driver discovers Zidoo devices on the network and control them with Unfolded Circle remotes. Multiple entities are exposed to the remote.
 
 **Media Player**
 
@@ -101,7 +101,7 @@ For running a separate integration driver on your network for Remote Two, the co
 ### Run
 
 ```shell
-python3 intg-sonyavr/driver.py
+python3 src/driver.py
 ```
 
 See
@@ -135,7 +135,7 @@ docker run --rm --name builder \
     docker.io/unfoldedcircle/r2-pyinstaller:3.11.6  \
     bash -c \
       "python -m pip install -r requirements.txt && \
-      pyinstaller --clean --onefile --name intg-zidoo intg-zidoo/driver.py"
+      pyinstaller --clean --onefile --name intg-zidoo src/driver.py"
 ```
 
 ### aarch64 Linux / Mac
@@ -149,7 +149,7 @@ docker run --rm --name builder \
     docker.io/unfoldedcircle/r2-pyinstaller:3.11.6  \
     bash -c \
       "python -m pip install -r requirements.txt && \
-      pyinstaller --clean --onefile --name intg-zidoo intg-zidoo/driver.py"
+      pyinstaller --clean --onefile --name intg-zidoo src/driver.py"
 ```
 
 ## Versioning
