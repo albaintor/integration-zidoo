@@ -118,8 +118,8 @@ class ZidooUrls(str, Enum):
     ALL = "zidoo://videos/all"
     FAVORITES = "zidoo://videos/favorites"
     WATCHING = "zidoo://videos/watching"
-    MOVIE = "zidoo://videos/movies"
-    TV_SHOW = "zidoo://videos/tvshows"
+    MOVIES = "zidoo://videos/movies"
+    TV_SHOWS = "zidoo://videos/tvshows"
     SD = "zidoo://videos/sd"
     BLURAY = "zidoo://videos/bluray"
     UHD = "zidoo://videos/4k"
@@ -129,9 +129,9 @@ class ZidooUrls(str, Enum):
     UNWATCHED = "zidoo://videos/unwatched"
     OTHER = "zidoo://videos/other"
     MUSIC = "zidoo://music/songs"
-    ALBUM = "zidoo://music/albums"
-    ARTIST = "zidoo://music/artists"
-    PLAYLIST = "zidoo://music/playlists"
+    ALBUMS = "zidoo://music/albums"
+    ARTISTS = "zidoo://music/artists"
+    PLAYLISTS = "zidoo://music/playlists"
     FILES = "zidoo://files/main"
     SHARES = "zidoo://files/share"
 
@@ -141,8 +141,8 @@ ZVIDEO_FILTER_TYPES: dict[ZidooUrls, int] = {
     ZidooUrls.ALL: 0,
     ZidooUrls.FAVORITES: 1,
     ZidooUrls.WATCHING: 2,
-    ZidooUrls.MOVIE: 3,
-    ZidooUrls.TV_SHOW: 4,
+    ZidooUrls.MOVIES: 3,
+    ZidooUrls.TV_SHOWS: 4,
     ZidooUrls.SD: 5,
     ZidooUrls.BLURAY: 6,
     ZidooUrls.UHD: 7,
@@ -166,25 +166,25 @@ ZIDOO_MEDIA_ENTRIES: list[MediaEntry] = [
     MediaEntry(title="Unwatched", media_id=ZidooUrls.UNWATCHED.value, media_type=MediaContent.VIDEO),
     MediaEntry(title="Other", media_id=ZidooUrls.OTHER.value, media_type=MediaContent.VIDEO),
     MediaEntry(title="All", media_id=ZidooUrls.ALL.value, media_type=MediaContent.VIDEO),
-    MediaEntry(title="Movies", media_id=ZidooUrls.MOVIE.value, media_type=MediaContent.MOVIE),
-    MediaEntry(title="TV Shows", media_id=ZidooUrls.TV_SHOW.value, media_type=MediaContent.TV_SHOW),
+    MediaEntry(title="Movies", media_id=ZidooUrls.MOVIES.value, media_type=MediaContent.MOVIE),
+    MediaEntry(title="TV Shows", media_id=ZidooUrls.TV_SHOWS.value, media_type=MediaContent.TV_SHOW),
     MediaEntry(title="Music", media_id=ZidooUrls.MUSIC.value, media_type=MediaContent.MUSIC),
-    MediaEntry(title="Albums", media_id=ZidooUrls.ALBUM.value, media_type=MediaContent.ALBUM),
-    MediaEntry(title="Artists", media_id=ZidooUrls.ARTIST.value, media_type=MediaContent.ARTIST),
-    MediaEntry(title="Playlists", media_id=ZidooUrls.PLAYLIST.value, media_type=MediaContent.PLAYLIST),
+    MediaEntry(title="Albums", media_id=ZidooUrls.ALBUMS.value, media_type=MediaContent.ALBUM),
+    MediaEntry(title="Artists", media_id=ZidooUrls.ARTISTS.value, media_type=MediaContent.ARTIST),
+    MediaEntry(title="Playlists", media_id=ZidooUrls.PLAYLISTS.value, media_type=MediaContent.PLAYLIST),
     MediaEntry(title="Files", media_id=ZidooUrls.FILES.value, media_type=MediaContent.URL),
     MediaEntry(title="Network files", media_id=ZidooUrls.SHARES.value, media_type=MediaContent.URL),
 ]
 
 ZDEFAULT_SHORTCUTS = [
-    ZidooUrls.WATCHING.value,
-    ZidooUrls.ALL.value,
-    ZidooUrls.RECENT.value,
-    ZidooUrls.MOVIE.value,
-    ZidooUrls.TV_SHOW.value,
-    ZidooUrls.ALBUM.value,
-    ZidooUrls.ARTIST.value,
-    ZidooUrls.MUSIC.value,
+    ZidooUrls.WATCHING,
+    ZidooUrls.ALL,
+    ZidooUrls.RECENT,
+    ZidooUrls.MOVIES,
+    ZidooUrls.TV_SHOWS,
+    ZidooUrls.ALBUMS,
+    ZidooUrls.ARTISTS,
+    ZidooUrls.MUSIC,
 ]
 
 

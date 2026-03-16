@@ -48,31 +48,31 @@ Supported commands:
 
 **Browsing media and search**
 
-Browsing categories are configurable in the setup flow : just fill the list of URLs separated by ";"
+Browsing categories are configurable in the setup flow : just fill the list of categories separated by commas `,`
 
-Example : `zidoo://videos/all;zidoo://music/albums;zidoo://files/main` 
+Example : `all,movies,albums,files` 
 
-| Category                   | URL                      |
-|----------------------------|--------------------------|
-| All videos                 | zidoo://videos/all       |
-| Favorites                  | zidoo://videos/favorites |
-| Watching                   | zidoo://videos/watching  |
-| Movies                     | zidoo://videos/movies    |
-| TV Shows                   | zidoo://videos/tvshows   |
-| Standard definition videos | zidoo://videos/sd        |
-| Blurays                    | zidoo://videos/bluray    |
-| 4K                         | zidoo://videos/4k        |
-| 3D                         | zidoo://videos/3d        |
-| Children                   | zidoo://videos/children  |
-| Recent                     | zidoo://videos/recent    |
-| Unwatched                  | zidoo://videos/unwatched |
-| Other                      | zidoo://videos/other     |
-| Songs                      | zidoo://music/songs      |
-| Albums                     | zidoo://music/albums     |
-| Artists                    | zidoo://music/artists    |
-| Playlists                  | zidoo://music/playlists  |
-| Local files                | zidoo://files/main       |
-| Network files              | zidoo://files/share      |
+| Description                | Category  | Internal URL             |
+|----------------------------|-----------|--------------------------|
+| All videos                 | all       | zidoo://videos/all       |
+| Favorites                  | favorites | zidoo://videos/favorites |
+| Watching                   | watching  | zidoo://videos/watching  |
+| Movies                     | movies    | zidoo://videos/movies    |
+| TV Shows                   | tv_shows  | zidoo://videos/tvshows   |
+| Standard definition videos | sd        | zidoo://videos/sd        |
+| Blurays                    | bluray    | zidoo://videos/bluray    |
+| 4K                         | uhd       | zidoo://videos/4k        |
+| 3D                         | video_3d  | zidoo://videos/3d        |
+| Children                   | children  | zidoo://videos/children  |
+| Recent                     | recent    | zidoo://videos/recent    |
+| Unwatched                  | unwatched | zidoo://videos/unwatched |
+| Other                      | other     | zidoo://videos/other     |
+| Songs                      | music     | zidoo://music/songs      |
+| Albums                     | albums    | zidoo://music/albums     |
+| Artists                    | artists   | zidoo://music/artists    |
+| Playlists                  | playlists | zidoo://music/playlists  |
+| Local files                | files     | zidoo://files/main       |
+| Network files              | shares    | zidoo://files/share      |
 
 
 Multiple instances are supported

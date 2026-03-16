@@ -297,9 +297,11 @@ class ZidooClient:
         self._subtitles_tracks: list[dict[str, Any]] = []
         self._localization: dict[str, Any] | None = None
         self._api = api
-        self._browsing_shortcuts = ZDEFAULT_SHORTCUTS
+        self._browsing_shortcuts = [x.value for x in ZDEFAULT_SHORTCUTS]
         try:
-            self._browsing_shortcuts = self._device_config.browsing_categories.split(";")
+            self._browsing_shortcuts = [
+                ZidooUrls(x.upper().strip()) for x in self._device_config.browsing_categories.split(",")
+            ]
         except Exception:  # pylint: disable=W0718
             pass
         self._devices_update_timestamp = 0
