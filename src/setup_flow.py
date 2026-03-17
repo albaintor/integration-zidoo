@@ -25,7 +25,7 @@ from ucapi import (
 import config
 import discover
 from config import ConfigDevice
-from const import ZDEFAULT_SHORTCUTS
+from const import ZDEFAULT_SHORTCUTS, ZidooUrls
 from zidooaio import ZidooClient
 
 _LOG = logging.getLogger(__name__)
@@ -43,6 +43,18 @@ class SetupSteps(IntEnum):
     DEVICE_CHOICE = 4
     RECONFIGURE = 5
     BACKUP_RESTORE = 6
+
+
+def sanitize_browsing_categories(categories: list[str]) -> list[str]:
+    """Build list of browing categories."""
+    results: list[str] = []
+    for category in categories:
+        try:
+            checked_category = ZidooUrls[category.upper().strip()]
+            results.append(checked_category.name.lower())
+        except KeyError:
+            _LOG.warning("Wrong browsing category, skipped : %s", category)
+    return results
 
 
 class SetupFlow:
@@ -470,7 +482,7 @@ class SetupFlow:
                 {
                     "field": {
                         "textarea": {
-                            "value": ";".join(ZDEFAULT_SHORTCUTS),
+                            "value": ",".join([x.name.lower() for x in ZDEFAULT_SHORTCUTS]),
                         }
                     },
                     "id": "browsing_categories",
@@ -498,7 +510,10 @@ class SetupFlow:
             refresh_interval = int(msg.input_values.get("refresh_interval", 10))
         except ValueError:
             return SetupError(error_type=IntegrationSetupError.OTHER)
-        browsing_categories = msg.input_values.get("browsing_categories", ";".join(ZDEFAULT_SHORTCUTS))
+        browsing_categories = msg.input_values.get(
+            "browsing_categories", ",".join([x.name.lower() for x in ZDEFAULT_SHORTCUTS])
+        )
+        browsing_categories = ",".join(sanitize_browsing_categories(browsing_categories.split(",")))
 
         _LOG.debug("Chosen Zidoo: %s. Trying to connect and retrieve device information...", host)
         try:
@@ -595,7 +610,10 @@ class SetupFlow:
             refresh_interval = int(msg.input_values.get("refresh_interval", 10))
         except ValueError:
             return SetupError(error_type=IntegrationSetupError.OTHER)
-        browsing_categories = msg.input_values.get("browsing_categories", ";".join(ZDEFAULT_SHORTCUTS))
+        browsing_categories = msg.input_values.get(
+            "browsing_categories", ",".join([x.name.lower() for x in ZDEFAULT_SHORTCUTS])
+        )
+        browsing_categories = ",".join(sanitize_browsing_categories(browsing_categories.split(",")))
 
         _LOG.debug("User has changed configuration")
         self._reconfigured_device.address = address

@@ -49,8 +49,9 @@ class ConfigDevice:
     always_on: bool | None = field(default=False)
     refresh_interval: int | None = field(default=10)
     sensor_include_device_name: bool | None = field(default=True)
-    browsing_categories: str = field(default=";".join(ZDEFAULT_SHORTCUTS))
+    browsing_categories: str = field(default=",".join([x.name.lower() for x in ZDEFAULT_SHORTCUTS]))
 
+    # pylint: disable=R0801
     def __post_init__(self):
         """Apply default values on missing fields."""
         for attribute in fields(self):

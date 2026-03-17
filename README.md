@@ -1,9 +1,9 @@
-# Zidoo integration for Remote Two
+# Zidoo integration for Remote Two/3
 
 Using code from [Zidoo Home Assistant component](https://github.com/wizmo2/zidoo-player)
 and [uc-integration-api](https://github.com/aitatoi/integration-python-library)
 
-The driver discovers Zidoo devices on the network. Multiple entities are exposed to the remote.
+The driver discovers Zidoo devices on the network and control them with Unfolded Circle remotes. Multiple entities are exposed to the remote.
 
 **Media Player**
 
@@ -48,31 +48,31 @@ Supported commands:
 
 **Browsing media and search**
 
-Browsing categories are configurable in the setup flow : just fill the list of URLs separated by ";"
+Browsing categories are configurable in the setup flow : just fill the list of categories separated by commas `,`
 
-Example : `zidoo://videos/all;zidoo://music/albums;zidoo://files/main` 
+Example : `all,movies,albums,files` 
 
-| Category                   | URL                      |
-|----------------------------|--------------------------|
-| All videos                 | zidoo://videos/all       |
-| Favorites                  | zidoo://videos/favorites |
-| Watching                   | zidoo://videos/watching  |
-| Movies                     | zidoo://videos/movies    |
-| TV Shows                   | zidoo://videos/tvshows   |
-| Standard definition videos | zidoo://videos/sd        |
-| Blurays                    | zidoo://videos/bluray    |
-| 4K                         | zidoo://videos/4k        |
-| 3D                         | zidoo://videos/3d        |
-| Children                   | zidoo://videos/children  |
-| Recent                     | zidoo://videos/recent    |
-| Unwatched                  | zidoo://videos/unwatched |
-| Other                      | zidoo://videos/other     |
-| Songs                      | zidoo://music/songs      |
-| Albums                     | zidoo://music/albums     |
-| Artists                    | zidoo://music/artists    |
-| Playlists                  | zidoo://music/playlists  |
-| Local files                | zidoo://files/main       |
-| Network files              | zidoo://files/share      |
+| Description                | Category  | Internal URL             |
+|----------------------------|-----------|--------------------------|
+| All videos                 | all       | zidoo://videos/all       |
+| Favorites                  | favorites | zidoo://videos/favorites |
+| Watching                   | watching  | zidoo://videos/watching  |
+| Movies                     | movies    | zidoo://videos/movies    |
+| TV Shows                   | tv_shows  | zidoo://videos/tvshows   |
+| Standard definition videos | sd        | zidoo://videos/sd        |
+| Blurays                    | bluray    | zidoo://videos/bluray    |
+| 4K                         | uhd       | zidoo://videos/4k        |
+| 3D                         | video_3d  | zidoo://videos/3d        |
+| Children                   | children  | zidoo://videos/children  |
+| Recent                     | recent    | zidoo://videos/recent    |
+| Unwatched                  | unwatched | zidoo://videos/unwatched |
+| Other                      | other     | zidoo://videos/other     |
+| Songs                      | music     | zidoo://music/songs      |
+| Albums                     | albums    | zidoo://music/albums     |
+| Artists                    | artists   | zidoo://music/artists    |
+| Playlists                  | playlists | zidoo://music/playlists  |
+| Local files                | files     | zidoo://files/main       |
+| Network files              | shares    | zidoo://files/share      |
 
 
 Multiple instances are supported
@@ -101,7 +101,7 @@ For running a separate integration driver on your network for Remote Two, the co
 ### Run
 
 ```shell
-python3 intg-sonyavr/driver.py
+python3 src/driver.py
 ```
 
 See
@@ -135,7 +135,7 @@ docker run --rm --name builder \
     docker.io/unfoldedcircle/r2-pyinstaller:3.11.6  \
     bash -c \
       "python -m pip install -r requirements.txt && \
-      pyinstaller --clean --onefile --name intg-zidoo intg-zidoo/driver.py"
+      pyinstaller --clean --onefile --name intg-zidoo src/driver.py"
 ```
 
 ### aarch64 Linux / Mac
@@ -149,7 +149,7 @@ docker run --rm --name builder \
     docker.io/unfoldedcircle/r2-pyinstaller:3.11.6  \
     bash -c \
       "python -m pip install -r requirements.txt && \
-      pyinstaller --clean --onefile --name intg-zidoo intg-zidoo/driver.py"
+      pyinstaller --clean --onefile --name intg-zidoo src/driver.py"
 ```
 
 ## Versioning
