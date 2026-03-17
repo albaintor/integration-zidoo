@@ -279,6 +279,7 @@ class ZidooClient:
         self._current_audio = 0
         self._song_list: list[str] | None = None
         self._state = States.OFF
+        self._internal_state = States.OFF
         self._last_update = None
         self._last_state = States.OFF
         self._media_info: dict[str, Any] = {}
@@ -688,6 +689,7 @@ class ZidooClient:
             self._update_interval = SCAN_INTERVAL if state == States.OFF else SCAN_INTERVAL_RAPID
             updated_data[MediaAttr.STATE] = state
         self._state = state
+        self._internal_state = self._state
         if updated_data:
             self.events.emit(Events.UPDATE, self.id, updated_data)
 
@@ -2058,8 +2060,10 @@ class ZidooClient:
     @cmd_wrapper
     async def media_play_pause(self):
         """Async Send play or Pause command."""
-        if self.state == States.PLAYING:
+        if self._internal_state == States.PLAYING:
+            self._internal_state = States.PAUSED
             return await self.media_pause()
+        self._internal_state = States.PLAYING
         return await self.media_play()
 
     @cmd_wrapper

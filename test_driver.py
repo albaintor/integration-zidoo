@@ -561,7 +561,7 @@ class BrowsingData:
 
 class SetupData:
     window: tk.Toplevel | None = None
-    mapping: dict[str, ttk.Widget | tk.IntVar | tk.StringVar] = {}
+    mapping: dict[str, ttk.Widget | tk.IntVar | tk.StringVar | tk.Widget] = {}
     mapping_type: dict[str, str] = {}
     data: dict[str, Any] | None = None
 
@@ -592,6 +592,22 @@ class RemoteInterface(tk.Tk):
         self._left_frame.grid_columnconfigure(2, weight=1)
         self._right_frame = ttk.Frame(self, width=650, height=600)
         self._right_frame.pack(side="right", fill="both", padx=10, pady=5, expand=True)
+        tool_bar2 = ttk.Frame(self._right_frame, width=650, height=80)
+        label = ttk.Label(tool_bar2, text="Volume")
+        label.pack(anchor="w", side="left", pady=(0, 10))
+        self._volume_bar: tk.Scale = tk.Scale(
+            tool_bar2,
+            from_=0,
+            to=100,
+            state="disabled",
+            orient="horizontal",
+            # command=lambda event: self.media_player_command("volume", {"volume": event.widget.get()}),
+        )
+        self._volume_bar.bind(
+            "<ButtonRelease-1>", lambda event: self.media_player_command("volume", {"volume": event.widget.get()})
+        )
+        self._volume_bar.pack(side="right", fill="x", expand=True)
+        tool_bar2.pack(side="bottom", fill="x", expand=True)
         tool_bar = ttk.Frame(self._right_frame, width=650, height=40)
         self._title_field = ttk.Label(tool_bar, text="Title")
         self._title_field.pack(anchor="w", pady=(0, 10))
@@ -610,19 +626,23 @@ class RemoteInterface(tk.Tk):
 
         start_setup_button = ttk.Button(self._left_frame, text="Start setup", command=lambda: self.setup_open())
         start_setup_button.grid(row=self._row, column=0)
-        label_setup = ttk.Label(self._left_frame, text="Reconfigure devices")
-        label_setup.grid(row=self._row, column=1)
-        self._setup_reconfigure = tk.IntVar(value=0)
+
+        self._setup_reconfigure = tk.IntVar(value=1)
         reconfigure_checkbox = tk.Checkbutton(self._left_frame, variable=self._setup_reconfigure, onvalue=1, offvalue=0)
-        reconfigure_checkbox.grid(row=self._row, column=2)
+        reconfigure_checkbox.grid(row=self._row, column=1, sticky="e")
+        label_setup = ttk.Label(self._left_frame, text="Reconfigure devices")
+        label_setup.grid(row=self._row, column=2, sticky="w")
         self._setup_data = SetupData()
         self._row += 1
+
+        reconnect_button = ttk.Button(self._left_frame, text="Reconnect driver", command=lambda: self.reconnect())
+        reconnect_button.grid(row=self._row, column=0)
 
         self._media_browse_button = ttk.Button(
             self._left_frame, text="Browse media", command=lambda: self.media_browse_open()
         )
         self._media_browse_data = BrowsingData()
-        self._media_browse_button.grid(row=self._row, column=0)
+        self._media_browse_button.grid(row=self._row, column=1)
         self._row += 1
 
         label = ttk.Label(self._left_frame, text="Search media :")
@@ -654,6 +674,12 @@ class RemoteInterface(tk.Tk):
         command.grid(row=self._row, column=0)
         self._command_on = ttk.Button(self._left_frame, text="On", command=lambda: self.media_player_command("on"))
         self._command_on.grid(row=self._row, column=1)
+        self._input_source = ttk.Combobox(self._left_frame, state="readonly", justify="left")
+        self._input_source.bind(
+            "<<ComboboxSelected>>",
+            lambda event: self.select_input_source(event),
+        )
+        self._input_source.grid(row=self._row, column=2)
         self._row += 1
         self._command_play_pause = ttk.Button(
             self._left_frame, text="Play/pause", command=lambda: self.media_player_command("play_pause")
@@ -663,6 +689,12 @@ class RemoteInterface(tk.Tk):
         )
         self._command_stop.grid(row=self._row, column=0)
         self._command_play_pause.grid(row=self._row, column=1)
+        self._sound_mode = ttk.Combobox(self._left_frame, state="readonly", justify="left")
+        self._sound_mode.bind(
+            "<<ComboboxSelected>>",
+            lambda event: self.select_sound_mode(event),
+        )
+        self._sound_mode.grid(row=self._row, column=2)
         self._row += 1
         command = ttk.Button(self._left_frame, text="Mute", command=lambda: self.media_player_command("mute_toggle"))
         command.grid(row=self._row, column=0)
@@ -717,6 +749,12 @@ class RemoteInterface(tk.Tk):
 
     def set_worker(self, worker: Any) -> None:
         self._worker = worker
+
+    def select_input_source(self, event: tk.Event):
+        self.media_player_command("select_source", {"source": event.widget.get()})
+
+    def select_sound_mode(self, event: tk.Event):
+        self.media_player_command("select_sound_mode", {"mode": event.widget.get()})
 
     def media_player_command(self, cmd_id: str, params: dict[str, Any] | None = None) -> None:
         _LOG.debug("Media Player Command %s", cmd_id)
@@ -834,6 +872,7 @@ class RemoteInterface(tk.Tk):
 
     def set_volume(self, volume: float) -> None:
         self._volume["text"] = volume
+        self._volume_bar.set(int(volume))
         self.update()
 
     def browsing_support(self, value: bool):
@@ -907,6 +946,32 @@ class RemoteInterface(tk.Tk):
                 self._worker._loop,
             )
 
+    def update_input_source(self):
+        entity_id = self._worker.get_media_player_entity_id()
+        attributes = self._worker.get_attributes(entity_id)
+        if attributes is None:
+            attributes = {}
+        if self._worker.has_feature(entity_id, "select_source"):
+            self._input_source.configure(state="normal")
+            self._input_source["values"] = attributes.get("source_list", [])
+            self._input_source.set(attributes.get("source", ""))
+        else:
+            self._input_source.configure(state="disabled")
+            self._input_source["values"] = []
+
+    def update_sound_mode(self):
+        entity_id = self._worker.get_media_player_entity_id()
+        attributes = self._worker.get_attributes(entity_id)
+        if attributes is None:
+            attributes = {}
+        if self._worker.has_feature(entity_id, "sound_mode"):
+            self._sound_mode.configure(state="normal")
+            self._sound_mode["values"] = attributes.get("sound_mode_list", [])
+            self._sound_mode.set(attributes.get("source", ""))
+        else:
+            self._sound_mode.configure(state="disabled")
+            self._sound_mode["values"] = []
+
     def set_position(self, position: int) -> None:
         # _LOG.debug("Setting position %s", position)
         self._position = position
@@ -961,6 +1026,10 @@ class RemoteInterface(tk.Tk):
     def change_media_player(self, event: Any):
         new_entity = event.widget.get()
         self._worker.change_media_player(new_entity)
+        entity_id = self._worker.get_media_player_entity_id()
+        attributes = self._worker.get_attributes(entity_id)
+        if attributes is None:
+            attributes = {}
         if self._browsing_support:
             self._media_browse_button.configure(state="normal")
         else:
@@ -969,6 +1038,14 @@ class RemoteInterface(tk.Tk):
             self._media_search_button.configure(state="normal")
         else:
             self._media_search_button.configure(state="disabled")
+        if self._worker.has_feature(entity_id, "volume"):
+            self._volume_bar.configure(state="normal")
+            self._volume_bar.set(attributes.get("volume", 50))
+        else:
+            self._volume_bar.configure(state="disabled")
+            self._volume_bar.set(0)
+        self.update_input_source()
+        self.update_sound_mode()
 
     async def browse_media(self, browsing_data: BrowsingData, entity_id):
         results = await self._worker.browse_media(
@@ -1192,6 +1269,12 @@ class RemoteInterface(tk.Tk):
         # else:
         #     self._media_browse_window.destroy()
 
+    def reconnect(self):
+        asyncio.run_coroutine_threadsafe(
+            self._worker.reconnect(),
+            self._worker._loop,
+        )
+
     def setup_open(self):
         if self._setup_data.window is None or not self._setup_data.window.winfo_exists():
             self._setup_data.window = tk.Toplevel(self, width=600, height=600)
@@ -1204,6 +1287,15 @@ class RemoteInterface(tk.Tk):
             self._worker._loop,
         )
 
+    def setup_confirmation(self, confirm: bool):
+        message = {"msg": "set_driver_user_data", "msg_data": {"confirm": confirm}}
+        asyncio.run_coroutine_threadsafe(
+            self._worker.send_request(message),
+            self._worker._loop,
+        )
+        for widget in self._setup_data.window.winfo_children():
+            widget.destroy()
+
     def setup_next(self):
         message = {"msg": "set_driver_user_data", "msg_data": {"input_values": {}}}
         settings: list[dict[str, Any]] = (
@@ -1214,7 +1306,7 @@ class RemoteInterface(tk.Tk):
                 if self._setup_data.mapping_type.get(key, "") == "number":
                     message["msg_data"]["input_values"][key] = widget.get()
                 else:
-                    message["msg_data"]["input_values"][key] = True if widget.get() == 1 else False
+                    message["msg_data"]["input_values"][key] = "true" if widget.get() == 1 else "false"
             elif isinstance(widget, ttk.Combobox):
                 entries = [x for x in settings if x.get("id", "") == key]
                 if len(entries) == 0:
@@ -1229,6 +1321,8 @@ class RemoteInterface(tk.Tk):
                     _LOG.error("No matching entries found in dropdown %s for selected value %s", entry, widget.get())
                     continue
                 message["msg_data"]["input_values"][key] = selected_entry[0].get("id", "")
+            elif isinstance(widget, tk.Text):
+                message["msg_data"]["input_values"][key] = widget.get("1.0", tk.END)
             else:
                 message["msg_data"]["input_values"][key] = widget.get()
         asyncio.run_coroutine_threadsafe(
@@ -1241,23 +1335,43 @@ class RemoteInterface(tk.Tk):
     def setup_action(self, data: dict[str, Any]):
         try:
             if self._setup_data.window is None or not self._setup_data.window.winfo_exists():
-                self._setup_data.window = tk.Toplevel(self, width=600, height=600)
-                self._setup_data.window.grid_columnconfigure(0, weight=1, pad=5)
-                self._setup_data.window.grid_columnconfigure(1, weight=1, pad=5)
-                self._setup_data.window.grid_columnconfigure(2, weight=1, pad=5)
-                self._setup_data.window.grid_columnconfigure(3, weight=1, pad=5)
+                self._setup_data.window = tk.Toplevel(self, width=650, height=600)
+                self._setup_data.window.grid_columnconfigure(0, weight=1, pad=2)
+                self._setup_data.window.grid_columnconfigure(1, weight=1, pad=2)
+                self._setup_data.window.grid_columnconfigure(2, weight=1, pad=2)
+                self._setup_data.window.grid_columnconfigure(3, weight=1, pad=2)
                 self._setup_data.window.grid_propagate(False)
-                self._setup_data.window.minsize(600, 600)
+                self._setup_data.window.minsize(650, 600)
             if self._setup_data.window is not None:
                 for widget in self._setup_data.window.winfo_children():
                     widget.destroy()
                 self._setup_data.window.grid_propagate(False)
-                self._setup_data.window.minsize(600, 600)
+                self._setup_data.window.minsize(650, 600)
             self._setup_data.mapping = {}
             self._setup_data.mapping_type = {}
             row = 0
             column = 0
             input_data = data.get("require_user_action", {}).get("input")
+            if input_data is None and (confirmation := data.get("require_user_action", {}).get("confirmation")):
+                if title := confirmation.get("title", {}).get("en", None):
+                    label = tk.Label(self._setup_data.window, text=title, wraplength=300)
+                    label.grid(row=row, column=column, columnspan=4, sticky="we")
+                    row += 1
+                if message1 := confirmation.get("message1", {}).get("en", None):
+                    label = tk.Label(self._setup_data.window, text=message1, wraplength=300)
+                    label.grid(row=row, column=column, columnspan=4, sticky="we")
+                    row += 1
+                submit_button = ttk.Button(
+                    self._setup_data.window, text="Yes", command=lambda: self.setup_confirmation(True)
+                )
+                submit_button.grid(row=row, column=0)
+                cancel_button = ttk.Button(
+                    self._setup_data.window, text="No", command=lambda: self.setup_confirmation(False)
+                )
+                cancel_button.grid(row=row, column=1)
+                self.update()
+                return
+
             if input_data is None:
                 if state := data.get("state"):
                     label = tk.Label(self._setup_data.window, text=state)
@@ -1271,8 +1385,8 @@ class RemoteInterface(tk.Tk):
                 return
 
             if input_field := input_data.get("title"):
-                label = tk.Label(self._setup_data.window, text=input_field.get("en", ""), wraplength=100)
-                label.grid(row=row, column=column, columnspan=4)
+                label = tk.Label(self._setup_data.window, text=input_field.get("en", ""), wraplength=300)
+                label.grid(row=row, column=column, columnspan=4, sticky="we")
                 row += 1
             if settings := input_data.get("settings"):
                 self._setup_data.data = data
@@ -1280,7 +1394,7 @@ class RemoteInterface(tk.Tk):
                     column = 0
                     field_id = setting.get("id", "")
                     if field := setting.get("label"):
-                        label = tk.Label(self._setup_data.window, text=field.get("en", ""), wraplength=100)
+                        label = tk.Label(self._setup_data.window, text=field.get("en", ""), wraplength=300)
                         label.grid(row=row, column=column, columnspan=2, sticky="w")
                         column += 2
                     if field := setting.get("field"):
@@ -1304,35 +1418,43 @@ class RemoteInterface(tk.Tk):
                         elif text := field.get("text"):
                             entry_text = tk.StringVar()
                             text_field = ttk.Entry(self._setup_data.window, textvariable=entry_text)
-                            entry_text.set(text.get("value", ""))
+                            value = text.get("value", "")
+                            if value is None:
+                                value = ""
+                            entry_text.set(value)
                             text_field.grid(row=row, column=column, columnspan=2, sticky="we")
                             self._setup_data.mapping[field_id] = entry_text
                             self._setup_data.mapping_type[field_id] = "text"
                         elif text := field.get("password"):
                             entry_text = tk.StringVar()
                             text_field = ttk.Entry(self._setup_data.window, textvariable=entry_text)
-                            entry_text.set(text.get("value", ""))
+                            value = text.get("value", "")
+                            if value is None:
+                                value = ""
+                            entry_text.set(value)
                             text_field.grid(row=row, column=column, columnspan=2, sticky="we")
                             self._setup_data.mapping[field_id] = entry_text
                             self._setup_data.mapping_type[field_id] = "password"
                         elif text := field.get("textarea"):
-                            entry_text = tk.StringVar()
-                            text_field = ttk.Entry(self._setup_data.window, textvariable=entry_text)
-                            entry_text.set(text.get("value", ""))
-                            text_field.grid(row=row, column=column, columnspan=2, sticky="we")
-                            self._setup_data.mapping[field_id] = entry_text
+                            text_area = tk.Text(self._setup_data.window, height=10)
+                            value = text.get("value", "")
+                            if value is None:
+                                value = ""
+                            text_area.insert("1.0", value)
+                            text_area.grid(row=row, column=column, columnspan=2, sticky="we")
+                            self._setup_data.mapping[field_id] = text_area
                             self._setup_data.mapping_type[field_id] = "textarea"
                         elif checkbox := field.get("checkbox"):
-                            var = tk.IntVar(value=1 if checkbox.get("value", False) else 0)
+                            var = tk.IntVar(value=1 if checkbox.get("value", "false") == "true" else 0)
                             checkbox_button = tk.Checkbutton(
                                 self._setup_data.window, variable=var, onvalue=1, offvalue=0
                             )
-                            checkbox_button.grid(row=row, column=column, columnspan=2, sticky="we")
+                            checkbox_button.grid(row=row, column=column, columnspan=2, sticky="w")
                             self._setup_data.mapping[field_id] = var
                             self._setup_data.mapping_type[field_id] = "checkbox"
                         elif label := field.get("label"):
                             label_field = ttk.Label(
-                                self._setup_data.window, text=label.get("value", {}).get("en", ""), wraplength=100
+                                self._setup_data.window, text=label.get("value", {}).get("en", ""), wraplength=300
                             )
                             label_field.grid(row=row, column=column, columnspan=4 - column, sticky="we")
                         elif text := field.get("number"):
@@ -1369,6 +1491,13 @@ class WorkerThread(threading.Thread):
     @property
     def entity_ids(self) -> list[str]:
         return self._entity_ids
+
+    async def reconnect(self):
+        await self.disconnect()
+        try:
+            self._loop.create_task(self.launch_server())
+        except Exception as e:
+            _LOG.exception("Error initialising server %s", e)
 
     def run(self):
         self._loop = asyncio.new_event_loop()
@@ -1458,6 +1587,9 @@ class WorkerThread(threading.Thread):
             return entity.get("entity_id")
         return None
 
+    def get_attributes(self, entity_id: str) -> dict[str, Any] | None:
+        return self._attributes.get(entity_id)
+
     async def update_attributes(self, updated_data: dict[str, Any]):
         if "attributes" not in updated_data:
             return
@@ -1522,8 +1654,10 @@ class WorkerThread(threading.Thread):
             self._interface._ui_queue.put(lambda u=attributes["volume"]: self._interface.set_volume(u))
         if "media_position" in attributes:
             self._interface._ui_queue.put(lambda u=attributes["media_position"]: self._interface.set_position(u))
-        if "media_duration" in attributes:
-            self._interface._ui_queue.put(lambda u=attributes["media_duration"]: self._interface.set_duration(u))
+        if "source_list" in attributes or "source" in attributes:
+            self._interface._ui_queue.put(lambda: self._interface.update_input_source())
+        if "sound_mode" in attributes or "sound_mode_list" in attributes:
+            self._interface._ui_queue.put(lambda: self._interface.update_sound_mode())
         await asyncio.sleep(0)
 
     async def entity_changed(self, msg: dict[str, Any]) -> None:
@@ -1597,6 +1731,9 @@ class WorkerThread(threading.Thread):
             self._interface.set_media_players(media_players)
             if len(media_players) > 0:
                 self._interface.set_media_player(media_players[0])
+                event = tk.Event()
+                event.widget = self._interface._media_players
+                self._interface.change_media_player(event)
 
             data = await self._ws.subscribe_entities(self._entity_ids)
             _LOG.debug("Subscribed entities : %s", data)
