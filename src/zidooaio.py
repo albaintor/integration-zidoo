@@ -2369,11 +2369,13 @@ class ZidooClient:
                 result = to_data_list(await self.search_movies(query, MediaContent(media_type), start, max_count))
                 root_item.title = query
             else:
+                # Internal library entry
                 if is_internal_url(media_id):
                     result = await self.get_movie_list(media_id, paging["page"], max_count)
                     entries = [x for x in ZIDOO_MEDIA_ENTRIES if x.media_id == media_id]
                     if len(entries) > 0:
                         root_item.title = self.get_localized(entries[0].title)
+                # TV Show
                 else:
                     try:
                         media_id = int(media_id)
@@ -2411,10 +2413,18 @@ class ZidooClient:
                     )
                     if is_episodes:
                         item_type = MediaContent.EPISODE
-
+                    subtitles: list[str] = []
+                    if rating := item.get("voteAverage", None):
+                        subtitles.append(f"{round(rating, 1)}")
+                    if year := item.get("year"):
+                        subtitles.append(str(year))
+                    subtitle = None
+                    if len(subtitles) > 0:
+                        subtitle = " - ".join(subtitles)
                     root_item.items.append(
                         BrowseMediaItem(
                             title=item.get("name", ""),
+                            subtitle=subtitle,
                             media_type=item_type,
                             media_class=item_type,
                             media_id=str(item_id),
