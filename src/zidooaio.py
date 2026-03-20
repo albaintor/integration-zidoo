@@ -100,7 +100,7 @@ UPDATE_LOCK_TIMEOUT = 10.0
 
 
 def is_internal_url(media_id: str | None) -> bool:
-    """Returns true if internal library URL."""
+    """Return true if internal library URL."""
     return media_id is not None and media_id.startswith("zidoo://")
 
 
@@ -115,7 +115,7 @@ def get_media_entry(media_id: str | None) -> MediaEntry | None:
 
 
 def to_data_list(response: dict[str, Any] | None) -> dict[str, Any] | None:
-    """converts the serach response to a data list"""
+    """Convert the search response to a data list."""
     data_list = []
     if response and response.get("all"):
         for item in response["all"]:
