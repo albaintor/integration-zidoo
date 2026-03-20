@@ -10,12 +10,18 @@ from dataclasses import asdict
 from typing import Any
 
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
+from ucapi.api_definitions import (
+    BrowseOptions,
+    BrowseResults,
+    SearchOptions,
+    SearchResults,
+    MediaContentType as MediaContent,
+)
 from ucapi.media_player import (
     Attributes,
     Commands,
     DeviceClasses,
     Features,
-    MediaContent,
     Options,
     States,
 )
@@ -227,11 +233,10 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
             res = await self._device.send_key(ZKEYS.ZKEY_NUM_8)
         elif cmd_id == Commands.DIGIT_9:
             res = await self._device.send_key(ZKEYS.ZKEY_NUM_9)
-        elif cmd_id == "play_media":  # TODO to be updated when UCAPI
+        elif cmd_id == Commands.PLAY_MEDIA:
             res = await self._device.play_media(params)
-        # elif cmd_id == "clear_playlist":  # TODO to be updated when UCAPI
+        # elif cmd_id == Commands.CLEAR_PLAYLIST:  # TODO
         #     res = await self._device.clear_playlist()
-        # TODO play media
         else:
             return StatusCodes.NOT_IMPLEMENTED
 
@@ -239,47 +244,37 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
             return StatusCodes.OK
         return StatusCodes.BAD_REQUEST
 
-    # pylint: disable=W0613
-    async def browse_media(
-        self,
-        params: dict[str, Any],
-        *,
-        websocket: Any,
-    ) -> dict[str, Any] | StatusCodes:
-        """Browse media command."""
-        browse_media_item, paging = await self._device.browse_media(
-            None, params.get("media_id", None), params.get("media_type", None), params.get("paging", None)
-        )
-        return {"media": asdict(browse_media_item), "pagination": paging}
+    async def browse(self, options: BrowseOptions) -> BrowseResults | StatusCodes:
+        """
+        Execute entity browsing request.
 
-    async def search_media(
-        self,
-        params: dict[str, Any],
-        *,
-        websocket: Any,
-    ) -> dict[str, Any] | StatusCodes:
+        Returns NOT_IMPLEMENTED if no handler is installed.
+
+        :param options: browsing parameters
+        :return: browsing response or status code if any error occurs
+        """
+        _LOG.debug("[%s] Browse media request %s", self._device._device_config.address, options)
+        browse_media_item, paging = await self._device.browse_media(
+            None, options.media_id, options.media_type, options.paging
+        )
+        return BrowseResults(media=browse_media_item, pagination=paging)
+
+    async def search(self, options: SearchOptions) -> SearchResults | StatusCodes:
         """
         Execute media search request.
 
         Returns NOT_IMPLEMENTED if no handler is installed.
 
-        :param params: search parameters
-        :param websocket: optional websocket connection. Allows for directed event
-                          callbacks instead of broadcasts.
+        :param options: search parameters
         :return: search response or status code if any error occurs
         """
-        _LOG.debug("[%s] Search media request %s", self._device.device_config.address, params)
-        query: str | None = params.get("query", None)
-        media_id: str | None = params.get("media_id", None)
-        media_type: str | None = params.get("media_type", None)
-        paging: dict[str, Any] | None = params.get("paging", None)
-        # media_search_filter: MediaSearchFilter | None = None
-        # if data := params.get("filter", None) is not None:
-        #     media_search_filter = MediaSearchFilter(**data)
-        if query is None:
+        _LOG.debug("[%s] Search media request %s", self._device._device_config.address, options)
+        if options.query is None:
             return StatusCodes.BAD_REQUEST
-        browse_media_item, paging = await self._device.browse_media(query, media_id, media_type, paging)
-        return {"media": [asdict(x) for x in browse_media_item.items], "pagination": paging}
+        browse_media_item, paging = await self._device.browse_media(
+            options.query, options.media_id, options.media_type, options.paging
+        )
+        return SearchResults(media=browse_media_item.items, pagination=paging)
 
     def filter_changed_attributes(self, update: dict[str, Any]) -> dict[str, Any]:
         """

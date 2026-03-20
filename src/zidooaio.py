@@ -27,8 +27,10 @@ import ucapi
 from aiohttp import ClientError, ClientOSError, ClientResponse, ClientSession, CookieJar
 from pyee.asyncio import AsyncIOEventEmitter
 from ucapi import IntegrationAPI, StatusCodes
+from ucapi.api_definitions import Pagination, PagingOptions, BrowseMediaItem
 from ucapi.media_player import Attributes as MediaAttr
-from ucapi.media_player import MediaClass, MediaContent, States
+from ucapi.media_player import States
+from ucapi.api_definitions import MediaClass, MediaContentType as MediaContent
 from ucapi.select import Attributes as SelectAttributes
 from ucapi.select import States as SelectStates
 from yarl import URL
@@ -52,7 +54,6 @@ from const import (
     ZUPNP_SERVERNAME,
     ZVIDEO_FILTER_TYPES,
     ZVIDEO_SEARCH_TYPES,
-    BrowseMediaItem,
     MediaEntry,
     ZidooSelects,
     ZidooSensors,
@@ -2214,28 +2215,24 @@ class ZidooClient:
         return root_item
 
     async def browse_media(
-        self, query: str | None, media_id: str | None, media_type: str | None, paging: dict[str, Any] | None
-    ) -> tuple[BrowseMediaItem, dict[str, Any]] | None:
+        self, query: str | None, media_id: str | None, media_type: str | None, paging: PagingOptions | None
+    ) -> tuple[BrowseMediaItem, Pagination] | None:
         """Browse media."""
         # pylint: disable=R0914,R1702,R0911,R0915,W1405
         try:
             if paging is None:
-                paging = {"page": 1, "limit": 10}
+                paging = Pagination(page=1, limit=10, count=0)
             else:
-                paging = paging.copy()
+                paging = Pagination(page=paging.page, limit=paging.limit, count=0)
             if self._localization is None:
                 await self.update_localization()
-            if paging is None:
-                paging = {"page": 1, "limit": 10}
-            else:
-                paging = paging.copy()
 
-            start = (paging["page"] - 1) * paging["limit"]
-            max_count = paging["limit"]
+            start = (paging.page - 1) * paging.limit
+            max_count = paging.limit
 
             if not media_id:
                 root_item = await self._get_browsing_root()
-                paging["count"] = len(root_item.items)
+                paging.count = len(root_item.items)
                 return root_item, paging
 
             root_item = BrowseMediaItem(
@@ -2285,7 +2282,7 @@ class ZidooClient:
                                     can_play=item_class != MediaClass.DIRECTORY,
                                 )
                             )
-                    paging["count"] = len(result["filelist"])
+                    paging.count = len(result["filelist"])
                 return root_item, paging
 
             if internal_entry := get_media_entry(media_id):
@@ -2325,7 +2322,7 @@ class ZidooClient:
                     #     title = shortcut
                 _LOGGER.debug("[%s] Find music results %s", self._device_config.address, result)
                 if result and result.get("array"):
-                    paging["count"] = result["total"]
+                    paging.count = result["total"]
                     for item in result["array"]:
                         if item.get("result"):
                             data = item["result"]
@@ -2371,7 +2368,7 @@ class ZidooClient:
             else:
                 # Internal library entry
                 if is_internal_url(media_id):
-                    result = await self.get_movie_list(media_id, paging["page"], max_count)
+                    result = await self.get_movie_list(media_id, paging.page, max_count)
                     entries = [x for x in ZIDOO_MEDIA_ENTRIES if x.media_id == media_id]
                     if len(entries) > 0:
                         root_item.title = self.get_localized(entries[0].title)
@@ -2400,7 +2397,7 @@ class ZidooClient:
             #     result = await player.get_collection_list(search_id)
 
             if result and (data := result.get("data")):
-                paging["count"] = result.get("total", result.get("size", len(data)))
+                paging.count = result.get("total", result.get("size", len(data)))
                 for item in data:
                     child_type = item["type"]
                     item_id = item["id"]
@@ -2447,7 +2444,7 @@ class ZidooClient:
                 ex,
             )
         root_item = await self._get_browsing_root()
-        paging["count"] = len(root_item.items)
+        paging.count = len(root_item.items)
         return root_item, paging
 
     @cmd_wrapper
