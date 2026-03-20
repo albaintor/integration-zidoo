@@ -27,10 +27,11 @@ import ucapi
 from aiohttp import ClientError, ClientOSError, ClientResponse, ClientSession, CookieJar
 from pyee.asyncio import AsyncIOEventEmitter
 from ucapi import IntegrationAPI, StatusCodes
-from ucapi.api_definitions import Pagination, PagingOptions, BrowseMediaItem
+from ucapi.api_definitions import BrowseMediaItem, MediaClass
+from ucapi.api_definitions import MediaContentType as MediaContent
+from ucapi.api_definitions import Pagination, PagingOptions
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import States
-from ucapi.api_definitions import MediaClass, MediaContentType as MediaContent
 from ucapi.select import Attributes as SelectAttributes
 from ucapi.select import States as SelectStates
 from yarl import URL
@@ -354,6 +355,11 @@ class ZidooClient:
         if self.media_image_url:
             updated_data[MediaAttr.MEDIA_IMAGE_URL] = self.media_image_url
         return updated_data
+
+    @property
+    def device_config(self) -> ConfigDevice:
+        """Return device configuration."""
+        return self._device_config
 
     @property
     def media_type(self):

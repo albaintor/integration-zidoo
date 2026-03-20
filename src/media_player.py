@@ -6,16 +6,17 @@ Media-player entity functions.
 """
 
 import logging
-from dataclasses import asdict
 from typing import Any
 
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
 from ucapi.api_definitions import (
     BrowseOptions,
     BrowseResults,
+)
+from ucapi.api_definitions import MediaContentType as MediaContent
+from ucapi.api_definitions import (
     SearchOptions,
     SearchResults,
-    MediaContentType as MediaContent,
 )
 from ucapi.media_player import (
     Attributes,
@@ -253,7 +254,7 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
         :param options: browsing parameters
         :return: browsing response or status code if any error occurs
         """
-        _LOG.debug("[%s] Browse media request %s", self._device._device_config.address, options)
+        _LOG.debug("[%s] Browse media request %s", self._device.device_config.address, options)
         browse_media_item, paging = await self._device.browse_media(
             None, options.media_id, options.media_type, options.paging
         )
@@ -268,7 +269,7 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
         :param options: search parameters
         :return: search response or status code if any error occurs
         """
-        _LOG.debug("[%s] Search media request %s", self._device._device_config.address, options)
+        _LOG.debug("[%s] Search media request %s", self._device.device_config.address, options)
         if options.query is None:
             return StatusCodes.BAD_REQUEST
         browse_media_item, paging = await self._device.browse_media(

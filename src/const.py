@@ -5,7 +5,8 @@ import logging
 from dataclasses import dataclass, field, fields
 from enum import Enum, StrEnum
 
-from ucapi.api_definitions import MediaClass, MediaContentType as MediaContent
+from ucapi.api_definitions import MediaClass
+from ucapi.api_definitions import MediaContentType as MediaContent
 
 _LOGGER = logging.getLogger(__package__)
 
