@@ -538,6 +538,11 @@ class ZidooClient:
         """
         await self.update()
 
+    async def manual_update_deferred(self, deferred: float):
+        """Defer manual update."""
+        await asyncio.sleep(deferred)
+        await self.manual_update()
+
     async def update(self) -> None:
         """Update data callback."""
         # pylint: disable = R0915,R1702, R0914
@@ -2476,5 +2481,5 @@ class ZidooClient:
         else:
             _LOGGER.debug("[%s] Play other %s", self._device_config.address, media_id)
             await self.play_file(media_id)
-
+        asyncio.create_task(self.manual_update_deferred(2))
         return StatusCodes.OK
