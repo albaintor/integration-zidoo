@@ -9,23 +9,21 @@ import logging
 from typing import Any
 
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
-from ucapi.api_definitions import (
-    BrowseOptions,
-    BrowseResults,
-)
-from ucapi.api_definitions import MediaContentType as MediaContent
-from ucapi.api_definitions import (
-    SearchOptions,
-    SearchResults,
-)
 from ucapi.media_player import (
     Attributes,
+    BrowseOptions,
+    BrowseResults,
     Commands,
     DeviceClasses,
     Features,
+)
+from ucapi.media_player import MediaContentType as MediaContent
+from ucapi.media_player import (
     Options,
+    SearchResults,
     States,
 )
+from ucapi.msg_definitions import SearchOptions
 
 from config import ConfigDevice, ZidooEntity, create_entity_id
 
@@ -153,93 +151,94 @@ class ZidooMediaPlayer(ZidooEntity, MediaPlayer):
             _LOG.warning("No device instance for entity: %s", self.id)
             return StatusCodes.SERVICE_UNAVAILABLE
 
-        if cmd_id == Commands.VOLUME_UP:
-            res = await self._device.volume_up()
-        elif cmd_id == Commands.VOLUME_DOWN:
-            res = await self._device.volume_down()
-        elif cmd_id == Commands.MUTE_TOGGLE:
-            res = await self._device.mute_volume()
-        elif cmd_id == Commands.ON:
-            await self._device.turn_on()
-            return StatusCodes.OK
-        elif cmd_id == Commands.OFF:
-            res = await self._device.turn_off()
-        elif cmd_id == Commands.TOGGLE:
-            res = await self._device.power_toggle()
-        elif cmd_id == Commands.SELECT_SOURCE:
-            res = await self._device.start_app(params.get("source"))
-        elif cmd_id == Commands.NEXT:
-            res = await self._device.media_next_track()
-        elif cmd_id == Commands.PREVIOUS:
-            res = await self._device.media_previous_track()
-        elif cmd_id == Commands.CHANNEL_UP:
-            res = await self._device.send_key(ZKEYS.ZKEY_PAGE_UP)
-        elif cmd_id == Commands.CHANNEL_DOWN:
-            res = await self._device.send_key(ZKEYS.ZKEY_PAGE_DOWN)
-        elif cmd_id == Commands.PLAY_PAUSE:
-            res = await self._device.media_play_pause()
-        elif cmd_id == Commands.STOP:
-            res = await self._device.media_stop()
-        elif cmd_id == Commands.FAST_FORWARD:
-            res = await self._device.send_key(ZKEYS.ZKEY_MEDIA_FORWARDS)
-        elif cmd_id == Commands.REWIND:
-            res = await self._device.send_key(ZKEYS.ZKEY_MEDIA_BACKWARDS)
-        elif cmd_id == Commands.RECORD:
-            res = await self._device.send_key(ZKEYS.ZKEY_RECORD)
-        elif cmd_id == Commands.CURSOR_UP:
-            res = await self._device.send_key(ZKEYS.ZKEY_UP)
-        elif cmd_id == Commands.CURSOR_DOWN:
-            res = await self._device.send_key(ZKEYS.ZKEY_DOWN)
-        elif cmd_id == Commands.CURSOR_LEFT:
-            res = await self._device.send_key(ZKEYS.ZKEY_LEFT)
-        elif cmd_id == Commands.CURSOR_RIGHT:
-            res = await self._device.send_key(ZKEYS.ZKEY_RIGHT)
-        elif cmd_id == Commands.CURSOR_ENTER:
-            res = await self._device.send_key(ZKEYS.ZKEY_OK)
-        elif cmd_id == Commands.BACK:
-            res = await self._device.send_key(ZKEYS.ZKEY_BACK)
-        elif cmd_id == Commands.MENU:
-            res = await self._device.send_key(ZKEYS.ZKEY_MENU)
-        elif cmd_id == Commands.HOME:
-            res = await self._device.send_key(ZKEYS.ZKEY_HOME)
-        elif cmd_id == Commands.SETTINGS:
-            res = await self._device.send_key(ZKEYS.ZKEY_APP_SWITCH)
-        elif cmd_id == Commands.CONTEXT_MENU:
-            res = await self._device.send_key(ZKEYS.ZKEY_POPUP_MENU)
-        elif cmd_id == Commands.INFO:
-            res = await self._device.send_key(ZKEYS.ZKEY_INFO)
-        elif cmd_id == Commands.AUDIO_TRACK:
-            res = await self._device.send_key(ZKEYS.ZKEY_AUDIO)
-        elif cmd_id == Commands.SUBTITLE:
-            res = await self._device.send_key(ZKEYS.ZKEY_SUBTITLE)
-        elif cmd_id == Commands.SEEK:
-            res = await self._device.set_media_position(params.get("media_position", 0) * 1000)
-        elif cmd_id == Commands.DIGIT_0:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_0)
-        elif cmd_id == Commands.DIGIT_1:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_1)
-        elif cmd_id == Commands.DIGIT_2:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_2)
-        elif cmd_id == Commands.DIGIT_3:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_3)
-        elif cmd_id == Commands.DIGIT_4:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_4)
-        elif cmd_id == Commands.DIGIT_5:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_5)
-        elif cmd_id == Commands.DIGIT_6:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_6)
-        elif cmd_id == Commands.DIGIT_7:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_7)
-        elif cmd_id == Commands.DIGIT_8:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_8)
-        elif cmd_id == Commands.DIGIT_9:
-            res = await self._device.send_key(ZKEYS.ZKEY_NUM_9)
-        elif cmd_id == Commands.PLAY_MEDIA:
-            res = await self._device.play_media(params)
-        # elif cmd_id == Commands.CLEAR_PLAYLIST:  # TODO
-        #     res = await self._device.clear_playlist()
-        else:
-            return StatusCodes.NOT_IMPLEMENTED
+        match cmd_id:
+            case Commands.VOLUME_UP:
+                res = await self._device.volume_up()
+            case Commands.VOLUME_DOWN:
+                res = await self._device.volume_down()
+            case Commands.MUTE_TOGGLE:
+                res = await self._device.mute_volume()
+            case Commands.ON:
+                await self._device.turn_on()
+                return StatusCodes.OK
+            case Commands.OFF:
+                res = await self._device.turn_off()
+            case Commands.TOGGLE:
+                res = await self._device.power_toggle()
+            case Commands.SELECT_SOURCE:
+                res = await self._device.start_app(params.get("source", ""))
+            case Commands.NEXT:
+                res = await self._device.media_next_track()
+            case Commands.PREVIOUS:
+                res = await self._device.media_previous_track()
+            case Commands.CHANNEL_UP:
+                res = await self._device.send_key(ZKEYS.ZKEY_PAGE_UP)
+            case Commands.CHANNEL_DOWN:
+                res = await self._device.send_key(ZKEYS.ZKEY_PAGE_DOWN)
+            case Commands.PLAY_PAUSE:
+                res = await self._device.media_play_pause()
+            case Commands.STOP:
+                res = await self._device.media_stop()
+            case Commands.FAST_FORWARD:
+                res = await self._device.send_key(ZKEYS.ZKEY_MEDIA_FORWARDS)
+            case Commands.REWIND:
+                res = await self._device.send_key(ZKEYS.ZKEY_MEDIA_BACKWARDS)
+            case Commands.RECORD:
+                res = await self._device.send_key(ZKEYS.ZKEY_RECORD)
+            case Commands.CURSOR_UP:
+                res = await self._device.send_key(ZKEYS.ZKEY_UP)
+            case Commands.CURSOR_DOWN:
+                res = await self._device.send_key(ZKEYS.ZKEY_DOWN)
+            case Commands.CURSOR_LEFT:
+                res = await self._device.send_key(ZKEYS.ZKEY_LEFT)
+            case Commands.CURSOR_RIGHT:
+                res = await self._device.send_key(ZKEYS.ZKEY_RIGHT)
+            case Commands.CURSOR_ENTER:
+                res = await self._device.send_key(ZKEYS.ZKEY_OK)
+            case Commands.BACK:
+                res = await self._device.send_key(ZKEYS.ZKEY_BACK)
+            case Commands.MENU:
+                res = await self._device.send_key(ZKEYS.ZKEY_MENU)
+            case Commands.HOME:
+                res = await self._device.send_key(ZKEYS.ZKEY_HOME)
+            case Commands.SETTINGS:
+                res = await self._device.send_key(ZKEYS.ZKEY_APP_SWITCH)
+            case Commands.CONTEXT_MENU:
+                res = await self._device.send_key(ZKEYS.ZKEY_POPUP_MENU)
+            case Commands.INFO:
+                res = await self._device.send_key(ZKEYS.ZKEY_INFO)
+            case Commands.AUDIO_TRACK:
+                res = await self._device.send_key(ZKEYS.ZKEY_AUDIO)
+            case Commands.SUBTITLE:
+                res = await self._device.send_key(ZKEYS.ZKEY_SUBTITLE)
+            case Commands.SEEK:
+                res = await self._device.set_media_position(params.get("media_position", 0) * 1000)
+            case Commands.DIGIT_0:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_0)
+            case Commands.DIGIT_1:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_1)
+            case Commands.DIGIT_2:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_2)
+            case Commands.DIGIT_3:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_3)
+            case Commands.DIGIT_4:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_4)
+            case Commands.DIGIT_5:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_5)
+            case Commands.DIGIT_6:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_6)
+            case Commands.DIGIT_7:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_7)
+            case Commands.DIGIT_8:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_8)
+            case Commands.DIGIT_9:
+                res = await self._device.send_key(ZKEYS.ZKEY_NUM_9)
+            case Commands.PLAY_MEDIA:
+                res = await self._device.play_media(params if params else {})
+            # case Commands.CLEAR_PLAYLIST:  # TODO
+            #   res = await self._device.clear_playlist()
+            case _:
+                return StatusCodes.NOT_IMPLEMENTED
 
         if res:
             return StatusCodes.OK

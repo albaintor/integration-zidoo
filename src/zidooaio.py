@@ -17,6 +17,7 @@ import struct
 import time
 import urllib.parse
 from asyncio import AbstractEventLoop, CancelledError, Lock, Task
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from functools import wraps
@@ -26,11 +27,10 @@ from urllib.parse import quote, unquote
 import ucapi
 from aiohttp import ClientError, ClientOSError, ClientResponse, ClientSession, CookieJar
 from pyee.asyncio import AsyncIOEventEmitter
-from ucapi import IntegrationAPI, StatusCodes
-from ucapi.api_definitions import BrowseMediaItem, MediaClass
-from ucapi.api_definitions import MediaContentType as MediaContent
-from ucapi.api_definitions import Pagination, PagingOptions
+from ucapi import IntegrationAPI, Paging, StatusCodes
 from ucapi.media_player import Attributes as MediaAttr
+from ucapi.media_player import BrowseMediaItem, MediaClass
+from ucapi.media_player import MediaContentType as MediaContent
 from ucapi.media_player import States
 from ucapi.select import Attributes as SelectAttributes
 from ucapi.select import States as SelectStates
@@ -134,6 +134,25 @@ def to_data_list(response: dict[str, Any] | None) -> dict[str, Any] | None:
     return None
 
 
+@dataclass
+class Pagination:
+    """
+    Pagination metadata returned by the client.
+
+    Attributes:
+        page (int):
+            Current page number, 1-based. Must correspond to the requested page.
+        limit (int):
+            Number of items returned in this page.
+        count (int|None):
+            Optional if known: Total number of available items across all pages.
+    """
+
+    page: int
+    limit: int
+    count: int | None = None
+
+
 _ZidooDeviceT = TypeVar("_ZidooDeviceT", bound="ZidooClient")
 _P = ParamSpec("_P")
 
@@ -197,7 +216,7 @@ def _create_magic_packet(mac_address: str) -> bytes:
     return b"\xff" * 6 + hw_addr * 16
 
 
-def _next_data(data, index: int) -> int:
+def _next_data(data: dict[Any, Any], index: int) -> int:
     """Toggle list."""
     temp = iter(data)
     for key in temp:
@@ -300,6 +319,7 @@ class ZidooClient:
         self._subtitles_tracks: list[dict[str, Any]] = []
         self._localization: dict[str, Any] | None = None
         self._api = api
+        self._websocket: Any | None = None
         self._browsing_shortcuts = [x.value for x in ZDEFAULT_SHORTCUTS]
         try:
             self._browsing_shortcuts = [
@@ -308,7 +328,7 @@ class ZidooClient:
         except Exception:  # pylint: disable=W0718
             pass
         self._devices_update_timestamp = 0
-        self._devices: dict[str, Any] | None = None
+        self._devices: dict[dict[str, Any], Any] | None = None
         self._media_id: str | None = None
 
     @property
@@ -357,7 +377,7 @@ class ZidooClient:
         return updated_data
 
     @property
-    def device_config(self) -> ConfigDevice:
+    def device_config(self) -> ConfigDevice | None:
         """Return device configuration."""
         return self._device_config
 
@@ -367,7 +387,7 @@ class ZidooClient:
         return self._media_type
 
     @property
-    def source(self) -> str:
+    def source(self) -> str | None:
         """Return the current input source."""
         return self._current_source
 
@@ -412,14 +432,14 @@ class ZidooClient:
         return ""
 
     @property
-    def media_album_name(self) -> str:
+    def media_album_name(self) -> str | None:
         """Album of current playing media."""
         return self._media_info.get("album")
 
     @property
     def media_duration(self) -> float | None:
         """Duration of current playing media in seconds."""
-        duration = self._media_info.get("duration")
+        duration: float | None = self._media_info.get("duration")
         if duration:
             return float(duration) / 1000
         return None
@@ -427,7 +447,7 @@ class ZidooClient:
     @property
     def media_position(self) -> float | None:
         """Position of current playing media in seconds."""
-        position = self._media_info.get("position")
+        position: float | None = self._media_info.get("position")
         if position:
             return float(position) / 1000
         return None
@@ -440,7 +460,7 @@ class ZidooClient:
         return None
 
     @property
-    def media_image_url(self) -> str:
+    def media_image_url(self) -> str | None:
         """Image url of current playing media."""
         return self.generate_current_image_url()
 
@@ -518,14 +538,13 @@ class ZidooClient:
             for key in sources:
                 self._source_list.append(key)
 
-    async def update_localization(self):
+    async def update_localization(self, websocket: Any | None = None):
         """Extract localization information."""
-        if self._api is None:
+        if self._api is None or (websocket is None and self._websocket is None):
             _LOGGER.debug("[%s] Can't update localization, api instance is not provided", self._device_config.address)
             return
         try:
-            # TODO hack, to be improved on UCAPI
-            self._localization = await self._api.get_localization_cfg(list(self._api.clients)[0])
+            self._localization = await self._api.get_localization_cfg(websocket if websocket else self._websocket)
             _LOGGER.debug("[%s] Localization extracted %s", self._device_config.address, self._localization)
         except Exception:  # pylint: disable=broad-except
             pass
@@ -543,7 +562,7 @@ class ZidooClient:
         await asyncio.sleep(deferred)
         await self.manual_update()
 
-    async def update(self) -> None:
+    async def update(self, websocket: Any | None = None) -> None:
         """Update data callback."""
         # pylint: disable = R0915,R1702, R0914
         if self._update_lock.locked():
@@ -569,8 +588,9 @@ class ZidooClient:
         state = States.OFF
         media_type = MediaContent.VIDEO
 
-        if self._localization is None:
-            asyncio.create_task(self.update_localization())
+        if self._localization is None and websocket:
+            self._websocket = websocket
+            asyncio.create_task(self.update_localization(websocket))
 
         try:
             if self.is_connected():
@@ -989,7 +1009,7 @@ class ZidooClient:
             self._cookies = response.cookies
         return response
 
-    async def get_source(self) -> str:
+    async def get_source(self) -> str | None:
         """Async Return last known app."""
         return self._current_source
 
@@ -1209,7 +1229,7 @@ class ZidooClient:
             return response.get("subtitles", [])
         return []
 
-    async def get_subtitle_indexes(self, log_errors=True) -> dict:
+    async def get_subtitle_indexes(self, log_errors=True) -> dict[Any, Any]:
         """Async Get subtitle list.
 
         Returns
@@ -1398,7 +1418,7 @@ class ZidooClient:
             return True
         return False
 
-    async def get_device_list(self) -> dict[str, Any] | None:
+    async def get_device_list(self) -> dict[dict[str, Any], Any] | None:
         """Async Return list of root file system devices.
 
         Returns
@@ -1527,7 +1547,7 @@ class ZidooClient:
 
     async def get_music_list(
         self, music_type: int = 0, music_id: int = None, start=0, max_count=DEFAULT_COUNT
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Async Return list of music.
 
         Parameters
@@ -1908,10 +1928,12 @@ class ZidooClient:
                 f"MusicControl/v2/playMusic?type={ZMUSIC_PLAYLISTTYPE[media_type]}"
                 f"&id={media_id}&musicId={music_id}&music_type=0&trackIndex=1&sort=0"
             )
-        else:  # music
+        elif self._song_list:  # music
             response = await self._req_json(
                 f"MusicControl/v2/playMusics?ids={'%2C'.join(self._song_list)}&musicId={music_id}&trackIndex=-1"
             )
+        else:
+            return False
 
         if response and response.get("status") == 200:
             return True
@@ -2209,32 +2231,33 @@ class ZidooClient:
 
         if self._devices:
             for device in self._devices:
-                content_type = device.get("type")
-                media_type = ZCONTENT_ITEM_TYPE.get(content_type, None)
-                media_class = ZCONTENT_ITEM_CLASS.get(media_type, None)
-                if media_type is None or media_class is None:
-                    continue
-                root_item.items.append(
-                    BrowseMediaItem(
-                        title=device.get("name", ""),
-                        media_id=ZidooUrls.FILES.value + "/" + quote(device.get("path", "")),
-                        media_class=media_class,
-                        media_type=media_type,
-                        can_browse=media_class == MediaClass.DIRECTORY,
+                content_type: int | None = device.get("type")
+                if content_type:
+                    media_type = ZCONTENT_ITEM_TYPE.get(content_type, None)
+                    media_class = ZCONTENT_ITEM_CLASS.get(media_type, None)
+                    if media_type is None or media_class is None:
+                        continue
+                    root_item.items.append(
+                        BrowseMediaItem(
+                            title=device.get("name", ""),
+                            media_id=ZidooUrls.FILES.value + "/" + quote(device.get("path", "")),
+                            media_class=media_class,
+                            media_type=media_type,
+                            can_browse=media_class == MediaClass.DIRECTORY,
+                        )
                     )
-                )
         return root_item
 
     async def browse_media(
-        self, query: str | None, media_id: str | None, media_type: str | None, paging: PagingOptions | None
+        self, query: str | None, media_id: str | None, media_type: str | None, paging_options: Paging | None
     ) -> tuple[BrowseMediaItem, Pagination] | None:
         """Browse media."""
         # pylint: disable=R0914,R1702,R0911,R0915,W1405
+        if paging_options is None:
+            paging = Pagination(page=1, limit=10, count=0)
+        else:
+            paging = Pagination(page=paging_options.page, limit=paging_options.limit, count=0)
         try:
-            if paging is None:
-                paging = Pagination(page=1, limit=10, count=0)
-            else:
-                paging = Pagination(page=paging.page, limit=paging.limit, count=0)
             if self._localization is None:
                 await self.update_localization()
 
@@ -2243,7 +2266,7 @@ class ZidooClient:
 
             if not media_id:
                 root_item = await self._get_browsing_root()
-                paging.count = len(root_item.items)
+                paging.count = len(root_item.items if root_item.items else [])
                 return root_item, paging
 
             root_item = BrowseMediaItem(

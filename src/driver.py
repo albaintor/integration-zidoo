@@ -101,7 +101,7 @@ async def on_exit_standby() -> None:
 
 
 @api.listens_to(ucapi.Events.SUBSCRIBE_ENTITIES)
-async def on_subscribe_entities(entity_ids: list[str]) -> None:
+async def on_subscribe_entities(websocket: Any, entity_ids: list[str]) -> None:
     """
     Subscribe to given entities.
 
@@ -113,6 +113,8 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
     _LOG.debug("Subscribe entities event: %s", entity_ids)
     for entity_id in entity_ids:
         entity: ZidooEntity | None = api.configured_entities.get(entity_id)
+        if entity is None:
+            continue
         device_id = entity.deviceid
         if device_id in _configured_devices:
             device = _configured_devices[device_id]
@@ -128,7 +130,7 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
 
         device = config.devices.get(device_id)
         if device:
-            _configure_new_device(device, connect=True)
+            _configure_new_device(device, connect=True, websocket=websocket)
         else:
             _LOG.error(
                 "Failed to subscribe entity %s: no device configuration found",
@@ -292,7 +294,9 @@ def _get_entities(device_id: str, include_all=False) -> list[ZidooEntity]:
     return entities
 
 
-def _configure_new_device(device_config: config.ConfigDevice, connect: bool = True) -> None:
+def _configure_new_device(
+    device_config: config.ConfigDevice, connect: bool = True, websocket: Any | None = None
+) -> None:
     """
     Create and configure a new device.
 
@@ -317,7 +321,7 @@ def _configure_new_device(device_config: config.ConfigDevice, connect: bool = Tr
 
     if connect:
         # start background connection task
-        _LOOP.create_task(device.update())
+        _LOOP.create_task(device.update(websocket=websocket))
         _LOOP.create_task(on_device_connected(device_config.id))
     _register_available_entities(device_config, device)
 

@@ -1,6 +1,6 @@
 {
   "driver_id": "zidootv_driver",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "min_core_api": "0.20.0",
   "name": {
     "en": "Zidoo TV"
@@ -43,5 +43,5 @@
       }
     ]
   },
-  "release_date": "2026-03-22"
+  "release_date": "2026-04-12"
 }
