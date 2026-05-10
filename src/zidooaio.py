@@ -68,6 +68,7 @@ SCAN_INTERVAL_RAPID = timedelta(seconds=1)
 CONNECTION_RETRIES = 10
 CONNECT_LOCK_TIMEOUT = 20
 REFRESH_INTERVAL = 10
+MEDIA_STATUS_GRACE = timedelta(seconds=60)
 ERROR_OS_WAIT = 0.5
 THUMBNAIL_WIDTH = 300
 THUMBNAIL_HEIGHT = 200
@@ -295,6 +296,7 @@ class ZidooClient:
         self._music_id = -1
         self._music_type = -1
         self._last_video_path = None
+        self._last_video_id_lookup = 0.0
         self._movie_info = {}
         self._current_subtitle = 0
         self._current_audio = 0
@@ -616,13 +618,27 @@ class ZidooClient:
                 current_video_info = self.video_info
                 current_audio_info = self.audio_info
 
-                self._media_info = {}
+                previous_media_info = self._media_info
+                previous_current_media = self._current_media
+                previous_source = self._current_source
                 playing_info = await self.get_playing_info()
                 if playing_info is None or not playing_info:
-                    # self._media_type = MediaType.APP # None
-                    media_type = MediaContent.VIDEO
-                    state = States.ON
-                    self._current_media = None
+                    if self._should_keep_stale_media():
+                        _LOGGER.debug(
+                            "[%s] Keeping stale media data after a transient playback status failure",
+                            self._device_config.address,
+                        )
+                        self._media_info = previous_media_info
+                        self._current_media = previous_current_media
+                        self._current_source = previous_source
+                        media_type = self._media_type or MediaContent.VIDEO
+                        state = self._last_state if self._last_state in (States.PLAYING, States.PAUSED) else self._state
+                    else:
+                        # self._media_type = MediaType.APP # None
+                        self._media_info = {}
+                        media_type = MediaContent.VIDEO
+                        state = States.ON
+                        self._current_media = None
                 else:
                     self._media_info = playing_info
                     self._current_media = playing_info.get("path")
@@ -634,7 +650,7 @@ class ZidooClient:
                     if mediatype and mediatype is not None:
                         if self._media_id != self._current_media:
                             self._media_id = self._current_media
-                            updated_data["media_id"] = self._current_media
+                            updated_data[MediaAttr.MEDIA_ID] = self._current_media
                         if mediatype == "video":
                             item_type = self._media_info.get("type")
                             if item_type is not None and item_type == "tv":
@@ -655,7 +671,8 @@ class ZidooClient:
                 if current_video_info != self.video_info:
                     updated_data[ZidooSensors.SENSOR_VIDEO_INFO] = self.video_info
 
-                if title != self.media_title or self._current_media != current_media:
+                media_changed = self._current_media != current_media
+                if title != self.media_title or media_changed:
                     _LOGGER.debug("[%s] New media detected %s", self._device_config.address, self._media_info)
                     updated_data[MediaAttr.MEDIA_TITLE] = self.media_title
                     self._subtitles_tracks = await self.get_subtitle_list()
@@ -669,21 +686,20 @@ class ZidooClient:
                         SelectAttributes.OPTIONS: self.subtitle_tracks,
                         SelectAttributes.CURRENT_OPTION: self.subtitle_track,
                     }
-                    image_url = self.generate_current_image_url()
-                    if image_url != self._media_image_url:
-                        if image_url is None:
-                            image_url = ""
-                        self._media_image_url = image_url
-                        updated_data[MediaAttr.MEDIA_IMAGE_URL] = self._media_image_url
-                    else:
+
+                image_url = self.generate_current_image_url() or ""
+                if image_url != (self._media_image_url or "") or media_changed:
+                    self._media_image_url = image_url
+                    updated_data[MediaAttr.MEDIA_IMAGE_URL] = self._media_image_url
+                    if not image_url:
                         _LOGGER.debug(
-                            "[%s] No image url detected for new media %s",
+                            "[%s] No image url detected for media %s",
                             self._device_config.address,
                             self._current_media,
                         )
 
                 if current_subtitle != self._current_subtitle:
-                    if updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] is None:
+                    if ZidooSelects.SELECT_SUBTITLE_STREAM not in updated_data:
                         updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM] = {}
                     updated_data[ZidooSelects.SELECT_SUBTITLE_STREAM][
                         SelectAttributes.CURRENT_OPTION
@@ -691,7 +707,7 @@ class ZidooClient:
                     updated_data[ZidooSensors.SENSOR_SUBTITLE_STREAM] = self.subtitle_track
 
                 if current_audio != self._current_audio:
-                    if updated_data[ZidooSelects.SELECT_AUDIO_STREAM] is None:
+                    if ZidooSelects.SELECT_AUDIO_STREAM not in updated_data:
                         updated_data[ZidooSelects.SELECT_AUDIO_STREAM] = {}
                     updated_data[ZidooSelects.SELECT_AUDIO_STREAM][SelectAttributes.CURRENT_OPTION] = self.audio_track
                     updated_data[ZidooSensors.SENSOR_AUDIO_STREAM] = self.audio_track
@@ -1089,12 +1105,13 @@ class ZidooClient:
                 return_value["audio"] = result.get("audioInfo")
                 return_value["video"] = result.get("output")
                 return_value["path"] = result.get("path")
-                if (
-                    return_value["status"] is True
-                    and return_value["uri"]
-                    and return_value["uri"] != self._last_video_path
-                ):
+                if not return_value["uri"]:
+                    self._last_video_path = None
+                    self._video_id = 0
+                    self._movie_info = {}
+                if return_value["uri"] and self._should_lookup_video_id(return_value["uri"]):
                     self._last_video_path = return_value["uri"]
+                    self._last_video_id_lookup = time.time()
                     self._video_id = await self._get_id_from_uri(self._last_video_path)
                 result = response.get("zoom")
                 return_value["zoom"] = result.get("information")
@@ -1102,37 +1119,71 @@ class ZidooClient:
         # _LOGGER.debug("video play info: %s", str(response))
         return None
 
+    def _should_keep_stale_media(self) -> bool:
+        """Return true if a transient status failure should not clear current media."""
+        if not self._current_media or not self._media_info or self._last_update is None:
+            return False
+        return datetime.now(timezone.utc) - self._last_update <= MEDIA_STATUS_GRACE
+
+    def _should_lookup_video_id(self, uri: str) -> bool:
+        """Return true if Poster Wall metadata should be requested for a video path."""
+        if uri != self._last_video_path:
+            self._movie_info = {}
+            self._video_id = 0
+            return True
+        if self._video_id > 0:
+            return False
+        return time.time() - self._last_video_id_lookup >= REFRESH_INTERVAL
+
+    @staticmethod
+    def _first_positive_int(*values: Any) -> int:
+        """Return the first positive integer in the provided values."""
+        for value in values:
+            try:
+                result = int(value)
+            except (TypeError, ValueError):
+                continue
+            if result > 0:
+                return result
+        return 0
+
     async def _get_id_from_uri(self, uri: str) -> int:
         """Async Return movie id from the path."""
         movie_id = 0
         movie_info = {}
+        self._movie_info = {}
 
-        response = await self._req_json(f"ZidooPoster/v2/getAggregationOfFile?path={urllib.parse.quote(uri)}")
+        response = await self._req_json("ZidooPoster/v2/getAggregationOfFile", params={"path": uri})
 
         if response:
             movie_info["type"] = response.get("type")
             result = response.get("movie")
             if result is not None:
-                movie_id = result.get("id")
+                movie_id = self._first_positive_int(result.get("id"), result.get("parentId"))
                 movie_info["movie_name"] = result.get("name")
-                movie_info["tag"] = result["aggregation"].get("tagLine")
-                release = result["aggregation"].get("releaseDate")
+                aggregation = result.get("aggregation") or {}
+                movie_info["tag"] = aggregation.get("tagLine")
+                release = aggregation.get("releaseDate")
                 if release:
                     movie_info["date"] = datetime.strptime(release, "%Y-%m-%d")
             result = response.get("episode")
             if result is not None:
-                movie_id = result.get("id")
-                movie_info["episode"] = result["aggregation"].get("episodeNumber")
-                movie_info["episode_name"] = result["aggregation"].get("name")
+                movie_id = self._first_positive_int(result.get("id"), result.get("parentId"), movie_id)
+                aggregation = result.get("aggregation") or {}
+                movie_info["episode"] = aggregation.get("episodeNumber")
+                movie_info["episode_name"] = aggregation.get("name")
             result = response.get("season")
             if result is not None:
-                movie_info["season"] = result["aggregation"].get("seasonNumber")
-                movie_info["season_name"] = result["aggregation"].get("name")
-                movie_info["series_name"] = result["aggregation"].get("tvName")
+                aggregation = result.get("aggregation") or {}
+                movie_info["season"] = aggregation.get("seasonNumber")
+                movie_info["season_name"] = aggregation.get("name")
+                movie_info["series_name"] = aggregation.get("tvName")
             if not movie_id:
                 result = response.get("video")
                 if result is not None:
-                    movie_id = result.get("parentId")
+                    movie_id = self._first_positive_int(result.get("parentId"), result.get("id"))
+            if not movie_id:
+                movie_id = self._first_positive_int(response.get("parentId"), response.get("id"))
 
             self._movie_info = movie_info
 
