@@ -1,4 +1,4 @@
-name: Publish temporary tag
+name: Dispatch tagged release build
 
 on:
   push:
@@ -6,18 +6,14 @@ on:
       - ".github/workflows/publish-temp-release.yml"
 
 permissions:
-  contents: write
+  actions: write
+  contents: read
 
 jobs:
-  tag:
+  dispatch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Create release tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "v1.10.0" "e440a86f1cdddd1df0dfbfded414acce912eaacd"
-          git push origin "v1.10.0"
+      - name: Dispatch Build & Release on v1.10.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --ref "v1.10.0"
