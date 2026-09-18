@@ -1,4 +1,4 @@
-name: Dispatch tagged release build
+name: Publish stable release
 
 on:
   push:
@@ -6,14 +6,25 @@ on:
       - ".github/workflows/publish-temp-release.yml"
 
 permissions:
-  actions: write
-  contents: read
+  contents: write
 
 jobs:
-  dispatch:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch Build & Release on v1.10.0
+      - name: Publish v1.10.0
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run build.yml --repo "albaintor/integration-zidoo" --ref "v1.10.0"
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cd release-assets
+          gh release download latest --repo "albaintor/integration-zidoo" --pattern "uc-intg-zidoo-v1.10.0-aarch64-*.tar.gz"
+          src="$(find . -maxdepth 1 -type f -name 'uc-intg-zidoo-v1.10.0-aarch64-*.tar.gz' | sort | tail -n 1)"
+          test -n "$src"
+          stable="uc-intg-zidoo-v1.10.0-aarch64.tar.gz"
+          mv "$src" "$stable"
+          sha256sum "$stable" | sed 's#  #  #' > "uc-src.hash"
+          gh release create "v1.10.0" --repo "albaintor/integration-zidoo" --title "v1.10.0" \
+            --notes "Fix setup flow so starting or aborting setup no longer clears an existing shared configuration. Existing devices are preserved unless the explicit reset action is selected." \
+            "$stable" "uc-src.hash"
