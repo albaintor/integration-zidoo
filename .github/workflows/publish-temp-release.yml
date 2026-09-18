@@ -1,0 +1,24 @@
+name: Publish temporary tag
+
+on:
+  push:
+    paths:
+      - ".github/workflows/publish-temp-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: github.event.head_commit.message == 'chore: publish tag v1.10.0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create release tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "v1.10.0" "e440a86f1cdddd1df0dfbfded414acce912eaacd"
+          git push origin "v1.10.0"
